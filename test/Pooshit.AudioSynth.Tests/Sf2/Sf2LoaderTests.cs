@@ -359,21 +359,5 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(midiCC.SourceIsMidiCC, Is.True, "Bit 7 set => MIDI CC source.");
             Assert.That(general.SourceIsMidiCC, Is.False, "Bit 7 clear => general controller source.");
         }
-
-        private sealed class NonSeekableStream : System.IO.Stream {
-            private readonly System.IO.MemoryStream _inner;
-            public NonSeekableStream(byte[] data) => _inner = new System.IO.MemoryStream(data);
-            public override bool CanRead => true;
-            public override bool CanSeek => false;
-            public override bool CanWrite => false;
-            public override long Length => throw new System.NotSupportedException();
-            public override long Position { get => throw new System.NotSupportedException(); set => throw new System.NotSupportedException(); }
-            public override void Flush() { }
-            public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
-            public override long Seek(long offset, System.IO.SeekOrigin origin) => throw new System.NotSupportedException();
-            public override void SetLength(long value) => throw new System.NotSupportedException();
-            public override void Write(byte[] buffer, int offset, int count) => throw new System.NotSupportedException();
-            protected override void Dispose(bool disposing) { if (disposing) _inner.Dispose(); base.Dispose(disposing); }
-        }
     }
 }
