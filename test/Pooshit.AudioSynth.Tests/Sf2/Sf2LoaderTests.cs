@@ -200,8 +200,6 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(patches, Is.Empty, "Loading from a non-seekable stream must succeed.");
         }
 
-        // ── W1: truncated / inflated-size stream must surface as typed boundary exception ──────────
-
         [Test]
         [Description("W1: A file truncated mid-parse must throw InvalidSoundFontException, not raw EndOfStreamException.")]
         public void Loader_TruncatedStream_ThrowsInvalidSoundFontException() {
@@ -213,8 +211,6 @@ namespace Pooshit.AudioSynth.Tests {
                 () => Loader.Load(new MemoryStream(truncated)),
                 "A truncated SF2 byte stream must throw InvalidSoundFontException, not EndOfStreamException.");
         }
-
-        // ── W2: oversized-allocation cap (> MaxSafeArrayBytes) ────────────────────────────────────
 
         [Test]
         [Description("W2: smpl chunk declaring size > 256 MB must throw before allocating, not OOM.")]
@@ -236,8 +232,6 @@ namespace Pooshit.AudioSynth.Tests {
                 "phdr chunk with size > 256 MB must throw InvalidSoundFontException before any allocation.");
         }
 
-        // ── W2: parity / alignment guards ────────────────────────────────────────────────────────
-
         [Test]
         [Description("W2: smpl chunk declaring odd size must throw the parity guard exception.")]
         public void Loader_OddSmplChunkSize_ThrowsInvalidSoundFontException() {
@@ -257,8 +251,6 @@ namespace Pooshit.AudioSynth.Tests {
                 () => Loader.Load(new MemoryStream(sf2)),
                 "phdr chunk with size not divisible by 38 must throw InvalidSoundFontException.");
         }
-
-        // ── W2: BuildPresets / BuildInstruments bag-index guards ──────────────────────────────────
 
         [Test]
         [Description("W2: Preset bag start index > bag end index must throw InvalidSoundFontException (BuildPresets guard).")]
@@ -300,8 +292,6 @@ namespace Pooshit.AudioSynth.Tests {
                 "Instrument with bagEnd >= ibag.Length must throw InvalidSoundFontException.");
         }
 
-        // ── W2: BuildZones generator / modulator end-index guards ─────────────────────────────────
-
         [Test]
         [Description("W2: ibag terminal claiming genIdx beyond igen array length must throw InvalidSoundFontException.")]
         public void Loader_IbagGenEndExceedsIgenLength_ThrowsInvalidSoundFontException() {
@@ -322,8 +312,6 @@ namespace Pooshit.AudioSynth.Tests {
                 "ibag modEnd > imod.Length must throw InvalidSoundFontException, not Array.Copy out-of-range.");
         }
 
-        // ── W2: Sf2Generator model accessor unit tests ────────────────────────────────────────────
-
         [Test]
         [Description("W2: Sf2Generator.AmountInt16 must reinterpret the raw ushort as a signed 16-bit integer.")]
         public void Generator_AmountInt16_ReturnsSignedInterpretation() {
@@ -341,8 +329,6 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(gen.LowByte, Is.EqualTo(0x3A), "LowByte must be the low-order 8 bits.");
             Assert.That(gen.HighByte, Is.EqualTo(0xC0), "HighByte must be the high-order 8 bits.");
         }
-
-        // ── W2: Sf2Modulator model accessor unit tests ────────────────────────────────────────────
 
         [Test]
         [Description("W2: Sf2Modulator.SourceIsBipolar must return true when bit 9 of SourceOper is set.")]
