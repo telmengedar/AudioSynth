@@ -62,6 +62,11 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         /// <inheritdoc/>
         public int Read(Span<float> destination) {
+            if (destination.Length % _options.Channels != 0)
+                throw new ArgumentException(
+                    $"destination length ({destination.Length}) must be a multiple of the channel count ({_options.Channels}).",
+                    nameof(destination));
+
             int channels = _options.Channels;
             int blockFrames = _options.BlockFrames;
             int totalSamples = destination.Length;

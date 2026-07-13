@@ -102,5 +102,31 @@ namespace Pooshit.AudioSynth.Tests {
 
             Assert.That(tailPeak, Is.LessThan(1e-4f), $"voice still audible long after release; tail peak={tailPeak}");
         }
+
+        [Test]
+        public void ReadThrowsOnNonChannelAlignedSpan() {
+            SynthesizerOptions opts = new SynthesizerOptions(44100, 2, 64, 16);
+            SampleRegion region = BuildDcRegion(0.5f, 512, 44100);
+            SamplePatch patch = new SamplePatch(region, opts.SampleRate);
+            Synthesizer synth = new Synthesizer(opts, patch);
+
+            float[] buf = new float[3];
+            Assert.Throws<ArgumentException>(() => synth.Read(buf.AsSpan()),
+                "a stereo synthesizer given a 3-sample span must throw ArgumentException");
+        }
+
+        [Test]
+        public void ReadAlignedOddFrameCountRendersWithoutThrowing() {
+            SynthesizerOptions opts = new SynthesizerOptions(44100, 2, 64, 16);
+            SampleRegion region = BuildDcRegion(0.5f, 512, 44100);
+            SamplePatch patch = new SamplePatch(region, opts.SampleRate);
+            Synthesizer synth = new Synthesizer(opts, patch);
+
+            synth.NoteOn(0, 60, 100);
+            float[] buf = new float[6];
+            int written = synth.Read(buf.AsSpan());
+
+            Assert.That(written, Is.EqualTo(6), "Read must fill the full aligned span");
+        }
     }
 }
