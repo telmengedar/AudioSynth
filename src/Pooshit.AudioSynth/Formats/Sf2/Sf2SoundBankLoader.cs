@@ -520,36 +520,5 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         private const int MaxSafeArrayBytes = 256 * 1024 * 1024;
-
-        private readonly struct RawPreset {
-            public RawPreset(string name, ushort patchNumber, ushort bankNumber, ushort bagIndex) {
-                Name = name;
-                PatchNumber = patchNumber;
-                BankNumber = bankNumber;
-                BagIndex = bagIndex;
-            }
-            public string Name { get; }
-            public ushort PatchNumber { get; }
-            public ushort BankNumber { get; }
-            public ushort BagIndex { get; }
-        }
-
-        private readonly struct RawInstrument {
-            public RawInstrument(string name, ushort bagIndex) {
-                Name = name;
-                BagIndex = bagIndex;
-            }
-            public string Name { get; }
-            public ushort BagIndex { get; }
-        }
-
-        private readonly struct RawBag {
-            public RawBag(ushort generatorIndex, ushort modulatorIndex) {
-                GeneratorIndex = generatorIndex;
-                ModulatorIndex = modulatorIndex;
-            }
-            public ushort GeneratorIndex { get; }
-            public ushort ModulatorIndex { get; }
-        }
     }
 }
