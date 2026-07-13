@@ -1,8 +1,8 @@
 using System;
+using NUnit.Framework;
 using Pooshit.AudioSynth.Audio;
 using Pooshit.AudioSynth.Audio.Sinks;
 using Pooshit.AudioSynth.Audio.Sources;
-using Xunit;
 
 namespace Pooshit.AudioSynth.Tests {
 
@@ -11,7 +11,7 @@ namespace Pooshit.AudioSynth.Tests {
     /// </summary>
     public class SeamFlowTests {
 
-        [Fact]
+        [Test]
         public void SinePulledThroughRendererReachesSink() {
             AudioFormat format = new AudioFormat(44100, 2);
             SineSource source = new SineSource(format, 440.0, 0.5f);
@@ -19,11 +19,11 @@ namespace Pooshit.AudioSynth.Tests {
 
             long rendered = OfflineRenderer.Render(source, sink, 1000);
 
-            Assert.Equal(1000, rendered);
-            Assert.Equal(2000, sink.SampleCount);
+            Assert.That(rendered, Is.EqualTo(1000));
+            Assert.That(sink.SampleCount, Is.EqualTo(2000));
         }
 
-        [Fact]
+        [Test]
         public void RenderedSineIsNonSilentAndBounded() {
             AudioFormat format = new AudioFormat(44100, 1);
             SineSource source = new SineSource(format, 1000.0, 0.5f);
@@ -36,11 +36,11 @@ namespace Pooshit.AudioSynth.Tests {
             foreach (float sample in samples)
                 peak = Math.Max(peak, Math.Abs(sample));
 
-            Assert.True(peak > 0.4f, $"expected an audible sine, peak was {peak}");
-            Assert.True(peak <= 0.5f + 1e-4f, $"amplitude exceeded requested bound, peak was {peak}");
+            Assert.That(peak, Is.GreaterThan(0.4f), $"expected an audible sine, peak was {peak}");
+            Assert.That(peak, Is.LessThanOrEqualTo(0.5f + 1e-4f), $"amplitude exceeded requested bound, peak was {peak}");
         }
 
-        [Fact]
+        [Test]
         public void RendererRejectsFormatMismatch() {
             SineSource source = new SineSource(new AudioFormat(44100, 2), 440.0);
             InMemoryAudioSink sink = new InMemoryAudioSink(new AudioFormat(48000, 2));
