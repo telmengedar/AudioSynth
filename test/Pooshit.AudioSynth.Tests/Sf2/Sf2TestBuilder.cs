@@ -71,6 +71,73 @@ namespace Pooshit.AudioSynth.Tests {
         public static byte[] BuildBadSfbkTag() =>
             Build(new Options { SfbkTag = "SFBK" });
 
+        /// <summary>
+        /// Builds an SF2 where the smpl chunk declares a size exceeding the 256 MB safe-allocation cap,
+        /// which must be rejected before any allocation is attempted.
+        /// </summary>
+        public static byte[] BuildOversizedSmplChunk() =>
+            Build(new Options { OversizedSmplSize = true, InflatedRiffSize = true });
+
+        /// <summary>
+        /// Builds an SF2 where the smpl chunk declares an odd size (3), which fails the word-alignment parity guard.
+        /// </summary>
+        public static byte[] BuildOddSmplChunkSize() =>
+            Build(new Options { OddSmplSize = true });
+
+        /// <summary>
+        /// Builds an SF2 where the phdr chunk declares a size exceeding the 256 MB safe-allocation cap.
+        /// </summary>
+        public static byte[] BuildOversizedPhdrChunk() =>
+            Build(new Options { OversizedPhdrSize = true, InflatedRiffSize = true });
+
+        /// <summary>
+        /// Builds an SF2 where the phdr chunk declares a size (39) not divisible by the 38-byte record size.
+        /// </summary>
+        public static byte[] BuildOddPhdrChunkSize() =>
+            Build(new Options { OddPhdrSize = true });
+
+        /// <summary>
+        /// Builds an SF2 where a preset's pbag start index (2) exceeds its end index (0) — trips the
+        /// BuildPresets bagStart&gt;bagEnd guard.
+        /// </summary>
+        public static byte[] BuildBadPresetBagStart() =>
+            Build(new Options { HasOnePreset = true, BadPhdrBagStart = true });
+
+        /// <summary>
+        /// Builds an SF2 where a preset's pbag end index equals pbag.Length — trips the
+        /// BuildPresets bagEnd&gt;=count guard.
+        /// </summary>
+        public static byte[] BuildBadPresetBagEnd() =>
+            Build(new Options { HasOnePreset = true, BadPhdrBagEnd = true });
+
+        /// <summary>
+        /// Builds an SF2 where an instrument's ibag start index (2) exceeds its end index (0) — trips the
+        /// BuildInstruments bagStart&gt;bagEnd guard.
+        /// </summary>
+        public static byte[] BuildBadInstrumentBagStart() =>
+            Build(new Options { HasOnePreset = true, BadInstBagStart = true });
+
+        /// <summary>
+        /// Builds an SF2 where an instrument's ibag end index equals ibag.Length — trips the
+        /// BuildInstruments bagEnd&gt;=count guard.
+        /// </summary>
+        public static byte[] BuildBadInstrumentBagEnd() =>
+            Build(new Options { HasOnePreset = true, BadInstBagEnd = true });
+
+        /// <summary>
+        /// Builds an SF2 where the ibag terminal claims a generator end index beyond the igen array length —
+        /// trips the BuildZones genEnd&gt;gens.Length guard.
+        /// </summary>
+        public static byte[] BuildBadIbagGenEnd() =>
+            Build(new Options { HasOnePreset = true, BadIbagGenEnd = true });
+
+        /// <summary>
+        /// Builds an SF2 where the ibag terminal claims a modulator end index beyond the imod array length —
+        /// trips the BuildZones modEnd&gt;mods.Length guard.
+        /// </summary>
+        public static byte[] BuildBadIbagModEnd() =>
+            Build(new Options { HasOnePreset = true, BadIbagModEnd = true });
+
         private sealed class Options {
             public string RiffTag { get; set; } = "RIFF";
             public string SfbkTag { get; set; } = "sfbk";
@@ -81,9 +148,44 @@ namespace Pooshit.AudioSynth.Tests {
             public bool BadPbagIndices { get; set; }
             public bool NegativeSmplSize { get; set; }
 
+            /// <summary>Declare smpl size = MaxSafeArrayBytes+1 (no actual data); triggers the oversized-cap guard.</summary>
+            public bool OversizedSmplSize { get; set; }
+
+            /// <summary>Declare smpl size = 3 (odd); triggers the parity guard.</summary>
+            public bool OddSmplSize { get; set; }
+
+            /// <summary>Declare phdr size = MaxSafeArrayBytes+1 (no actual data); triggers ValidateChunkCount oversized guard.</summary>
+            public bool OversizedPhdrSize { get; set; }
+
+            /// <summary>Declare phdr size = 39 (not divisible by 38); triggers ValidateChunkCount parity guard.</summary>
+            public bool OddPhdrSize { get; set; }
+
+            /// <summary>Inflate the RIFF size field so ReadChunkSize passes for oversized chunk tests.</summary>
+            public bool InflatedRiffSize { get; set; }
+
+            /// <summary>Preset 0 bag index (2) > terminal bag index (0) — trips BuildPresets bagStart>bagEnd guard.</summary>
+            public bool BadPhdrBagStart { get; set; }
+
+            /// <summary>Preset terminal bag index (= pbag.Length) >= pbag.Length — trips BuildPresets bagEnd>=count guard.</summary>
+            public bool BadPhdrBagEnd { get; set; }
+
+            /// <summary>Instrument 0 bag index (2) > terminal bag index (0) — trips BuildInstruments bagStart>bagEnd guard.</summary>
+            public bool BadInstBagStart { get; set; }
+
+            /// <summary>Instrument terminal bag index (= ibag.Length) >= ibag.Length — trips BuildInstruments bagEnd>=count guard.</summary>
+            public bool BadInstBagEnd { get; set; }
+
+            /// <summary>ibag terminal declares genIdx=5 while igen has 0 real generators — trips BuildZones genEnd>gens.Length guard.</summary>
+            public bool BadIbagGenEnd { get; set; }
+
+            /// <summary>ibag terminal declares modIdx=5 while imod has 0 real modulators — trips BuildZones modEnd>mods.Length guard.</summary>
+            public bool BadIbagModEnd { get; set; }
+
             public bool Omit(string tag) =>
                 MissingPdtaTags != null && MissingPdtaTags.Contains(tag);
         }
+
+        private const int MaxSafeArrayBytesConst = 256 * 1024 * 1024;
 
         private static byte[] Build(Options opts) {
             byte[] info = MakeInfoList();
@@ -95,7 +197,10 @@ namespace Pooshit.AudioSynth.Tests {
             using BinaryWriter w = new BinaryWriter(ms, Encoding.ASCII, leaveOpen: true);
 
             w.Write(Encoding.ASCII.GetBytes(opts.RiffTag));
-            w.Write(sfbkContent.Length + 4);
+            int riffSize = opts.InflatedRiffSize
+                ? int.MaxValue / 2
+                : sfbkContent.Length + 4;
+            w.Write(riffSize);
             w.Write(Encoding.ASCII.GetBytes(opts.SfbkTag));
             w.Write(sfbkContent);
             w.Flush();
@@ -115,6 +220,12 @@ namespace Pooshit.AudioSynth.Tests {
                 smplChunk = Concat(
                     Encoding.ASCII.GetBytes("smpl"),
                     BitConverter.GetBytes(-1));
+            } else if (opts.OversizedSmplSize) {
+                smplChunk = Concat(
+                    Encoding.ASCII.GetBytes("smpl"),
+                    BitConverter.GetBytes(MaxSafeArrayBytesConst + 1));
+            } else if (opts.OddSmplSize) {
+                smplChunk = MakeChunk("smpl", new byte[] { 0, 0, 0 });
             } else {
                 short[] smplData = opts.Smpl ?? Array.Empty<short>();
                 byte[] smplBytes = SmplToBytes(smplData);
@@ -130,18 +241,28 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         private static byte[] MakePdtaList(Options opts) {
-            int totalPbagEntries = opts.HasOnePreset ? 2 : 1;
-            int totalIbagEntries = opts.HasOnePreset ? 2 : 1;
-            int realIgenCount = 0;
+            int totalPbagEntries = (opts.HasOnePreset && !opts.BadPhdrBagStart) ? 2 : 1;
+            int totalIbagEntries = (opts.HasOnePreset && !opts.BadInstBagStart) ? 2 : 1;
 
-            byte[] phdrBytes = MakePhdr(opts);
+            ushort ibagTermGenIdx = opts.BadIbagGenEnd ? (ushort)5 : (ushort)0;
+            ushort ibagTermModIdx = opts.BadIbagModEnd ? (ushort)5 : (ushort)0;
+
+            byte[] phdrBytes;
+            if (opts.OversizedPhdrSize)
+                phdrBytes = Concat(Encoding.ASCII.GetBytes("phdr"),
+                                   BitConverter.GetBytes(MaxSafeArrayBytesConst + 1));
+            else if (opts.OddPhdrSize)
+                phdrBytes = MakeChunk("phdr", new byte[39]);
+            else
+                phdrBytes = MakePhdr(opts);
+
             byte[] pbagBytes = MakePbag(opts, totalPbagEntries);
             byte[] pmodBytes = MakePmod();
             byte[] pgenBytes = MakePgen();
-            byte[] instBytes = MakeInst(opts, totalIbagEntries);
-            byte[] ibagBytes = MakeIbag(totalIbagEntries, realIgenCount);
+            byte[] instBytes = MakeInst(opts);
+            byte[] ibagBytes = MakeIbag(totalIbagEntries, ibagTermGenIdx, ibagTermModIdx);
             byte[] imodBytes = MakeImod();
-            byte[] igenBytes = MakeIgen(realIgenCount);
+            byte[] igenBytes = MakeIgen();
             byte[] shdrBytes = MakeShdr(opts);
 
             List<byte[]> parts = new List<byte[]>();
@@ -160,11 +281,26 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         private static byte[] MakePhdr(Options opts) {
-            byte[] eop = MakePresetRecord("EOP", 255, 255, (ushort)(opts.HasOnePreset ? 1 : 0));
-            if (!opts.HasOnePreset)
+            if (!opts.HasOnePreset) {
+                byte[] eop = MakePresetRecord("EOP", 255, 255, 0);
                 return MakeChunk("phdr", eop);
-            byte[] preset0 = MakePresetRecord("Test Preset", 0, 0, 0);
-            return MakeChunk("phdr", Concat(preset0, eop));
+            }
+
+            if (opts.BadPhdrBagStart) {
+                byte[] preset0 = MakePresetRecord("Test Preset", 0, 0, 2);
+                byte[] eop = MakePresetRecord("EOP", 255, 255, 0);
+                return MakeChunk("phdr", Concat(preset0, eop));
+            }
+
+            if (opts.BadPhdrBagEnd) {
+                byte[] preset0 = MakePresetRecord("Test Preset", 0, 0, 0);
+                byte[] eop = MakePresetRecord("EOP", 255, 255, 2);
+                return MakeChunk("phdr", Concat(preset0, eop));
+            }
+
+            byte[] p0 = MakePresetRecord("Test Preset", 0, 0, 0);
+            byte[] terminal = MakePresetRecord("EOP", 255, 255, 1);
+            return MakeChunk("phdr", Concat(p0, terminal));
         }
 
         private static byte[] MakePresetRecord(string name, int patch, int bank, ushort bagIdx) =>
@@ -196,29 +332,44 @@ namespace Pooshit.AudioSynth.Tests {
         private static byte[] MakePgen() =>
             MakeChunk("pgen", ZeroGeneratorRecord());
 
-        private static byte[] MakeInst(Options opts, int totalIbagEntries) {
-            byte[] eoi = MakeInstRecord("EOI", (ushort)(opts.HasOnePreset ? 1 : 0));
-            if (!opts.HasOnePreset)
+        private static byte[] MakeInst(Options opts) {
+            if (!opts.HasOnePreset) {
+                byte[] eoi = MakeInstRecord("EOI", 0);
                 return MakeChunk("inst", eoi);
-            byte[] inst0 = MakeInstRecord("Test Inst", 0);
-            return MakeChunk("inst", Concat(inst0, eoi));
+            }
+
+            if (opts.BadInstBagStart) {
+                byte[] inst0 = MakeInstRecord("Test Inst", 2);
+                byte[] eoi = MakeInstRecord("EOI", 0);
+                return MakeChunk("inst", Concat(inst0, eoi));
+            }
+
+            if (opts.BadInstBagEnd) {
+                byte[] inst0 = MakeInstRecord("Test Inst", 0);
+                byte[] eoi = MakeInstRecord("EOI", 2);
+                return MakeChunk("inst", Concat(inst0, eoi));
+            }
+
+            byte[] i0 = MakeInstRecord("Test Inst", 0);
+            byte[] terminal = MakeInstRecord("EOI", 1);
+            return MakeChunk("inst", Concat(i0, terminal));
         }
 
         private static byte[] MakeInstRecord(string name, ushort bagIdx) =>
             Concat(Name20(name), LE16(bagIdx));
 
-        private static byte[] MakeIbag(int totalEntries, int totalIgenTerminalIdx) {
+        private static byte[] MakeIbag(int totalEntries, ushort termGenIdx, ushort termModIdx) {
             if (totalEntries == 1)
-                return MakeChunk("ibag", MakeBagRecord((ushort)totalIgenTerminalIdx, 0));
+                return MakeChunk("ibag", MakeBagRecord(termGenIdx, termModIdx));
             byte[] zone0 = MakeBagRecord(0, 0);
-            byte[] term = MakeBagRecord((ushort)totalIgenTerminalIdx, 0);
+            byte[] term = MakeBagRecord(termGenIdx, termModIdx);
             return MakeChunk("ibag", Concat(zone0, term));
         }
 
         private static byte[] MakeImod() =>
             MakeChunk("imod", ZeroModulatorRecord());
 
-        private static byte[] MakeIgen(int realGenCount) =>
+        private static byte[] MakeIgen() =>
             MakeChunk("igen", ZeroGeneratorRecord());
 
         private static byte[] MakeShdr(Options opts) {

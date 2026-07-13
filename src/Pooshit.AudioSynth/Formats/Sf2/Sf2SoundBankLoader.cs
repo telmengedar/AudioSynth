@@ -38,7 +38,14 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
         private static IReadOnlyList<IPatch> ParseSeekable(Stream source) {
             using (BinaryReader reader = new BinaryReader(source, Encoding.ASCII, leaveOpen: true)) {
-                return ParseSoundFont(reader);
+                try {
+                    return ParseSoundFont(reader);
+                } catch (InvalidSoundFontException) {
+                    throw;
+                } catch (EndOfStreamException ex) {
+                    throw new InvalidSoundFontException(
+                        "Unexpected end of stream; the file is truncated or declares sizes exceeding its content.", ex);
+                }
             }
         }
 
@@ -160,6 +167,12 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             if (size % 2 != 0)
                 throw new InvalidSoundFontException(
                     $"smpl chunk size {size} is not a multiple of 2; 16-bit samples must be word-aligned.");
+
+            long remaining = reader.BaseStream.Length - reader.BaseStream.Position;
+            if (size > remaining)
+                throw new InvalidSoundFontException(
+                    $"smpl chunk declares {size} bytes but only {remaining} bytes remain in the stream; "
+                    + "file is truncated or the declared size is inflated.");
 
             int count = size / 2;
             short[] result = new short[count];

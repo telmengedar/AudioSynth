@@ -200,6 +200,180 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(patches, Is.Empty, "Loading from a non-seekable stream must succeed.");
         }
 
+        // ── W1: truncated / inflated-size stream must surface as typed boundary exception ──────────
+
+        [Test]
+        [Description("W1: A file truncated mid-parse must throw InvalidSoundFontException, not raw EndOfStreamException.")]
+        public void Loader_TruncatedStream_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildEmpty();
+            byte[] truncated = new byte[sf2.Length / 2];
+            Buffer.BlockCopy(sf2, 0, truncated, 0, truncated.Length);
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(truncated)),
+                "A truncated SF2 byte stream must throw InvalidSoundFontException, not EndOfStreamException.");
+        }
+
+        // ── W2: oversized-allocation cap (> MaxSafeArrayBytes) ────────────────────────────────────
+
+        [Test]
+        [Description("W2: smpl chunk declaring size > 256 MB must throw before allocating, not OOM.")]
+        public void Loader_OversizedSmplChunk_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildOversizedSmplChunk();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "smpl chunk with size > 256 MB must throw InvalidSoundFontException before any allocation.");
+        }
+
+        [Test]
+        [Description("W2: pdta sub-chunk (phdr) declaring size > 256 MB must throw before allocating, not OOM.")]
+        public void Loader_OversizedPhdrChunk_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildOversizedPhdrChunk();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "phdr chunk with size > 256 MB must throw InvalidSoundFontException before any allocation.");
+        }
+
+        // ── W2: parity / alignment guards ────────────────────────────────────────────────────────
+
+        [Test]
+        [Description("W2: smpl chunk declaring odd size must throw the parity guard exception.")]
+        public void Loader_OddSmplChunkSize_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildOddSmplChunkSize();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "smpl chunk with odd size must throw InvalidSoundFontException (not divisible by 2).");
+        }
+
+        [Test]
+        [Description("W2: phdr chunk declaring size not divisible by 38 must throw the parity guard exception.")]
+        public void Loader_OddPhdrChunkSize_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildOddPhdrChunkSize();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "phdr chunk with size not divisible by 38 must throw InvalidSoundFontException.");
+        }
+
+        // ── W2: BuildPresets / BuildInstruments bag-index guards ──────────────────────────────────
+
+        [Test]
+        [Description("W2: Preset bag start index > bag end index must throw InvalidSoundFontException (BuildPresets guard).")]
+        public void Loader_PresetBagStartExceedsBagEnd_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildBadPresetBagStart();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "Preset with bagStart > bagEnd must throw InvalidSoundFontException, not produce wrong zones.");
+        }
+
+        [Test]
+        [Description("W2: Preset bag end index >= pbag.Length must throw InvalidSoundFontException (BuildPresets guard).")]
+        public void Loader_PresetBagEndOutOfRange_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildBadPresetBagEnd();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "Preset with bagEnd >= pbag.Length must throw InvalidSoundFontException, not index out of range.");
+        }
+
+        [Test]
+        [Description("W2: Instrument bag start index > bag end index must throw InvalidSoundFontException (BuildInstruments guard).")]
+        public void Loader_InstrumentBagStartExceedsBagEnd_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildBadInstrumentBagStart();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "Instrument with bagStart > bagEnd must throw InvalidSoundFontException.");
+        }
+
+        [Test]
+        [Description("W2: Instrument bag end index >= ibag.Length must throw InvalidSoundFontException (BuildInstruments guard).")]
+        public void Loader_InstrumentBagEndOutOfRange_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildBadInstrumentBagEnd();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "Instrument with bagEnd >= ibag.Length must throw InvalidSoundFontException.");
+        }
+
+        // ── W2: BuildZones generator / modulator end-index guards ─────────────────────────────────
+
+        [Test]
+        [Description("W2: ibag terminal claiming genIdx beyond igen array length must throw InvalidSoundFontException.")]
+        public void Loader_IbagGenEndExceedsIgenLength_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildBadIbagGenEnd();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "ibag genEnd > igen.Length must throw InvalidSoundFontException, not Array.Copy out-of-range.");
+        }
+
+        [Test]
+        [Description("W2: ibag terminal claiming modIdx beyond imod array length must throw InvalidSoundFontException.")]
+        public void Loader_IbagModEndExceedsImodLength_ThrowsInvalidSoundFontException() {
+            byte[] sf2 = Sf2TestBuilder.BuildBadIbagModEnd();
+
+            Assert.Throws<InvalidSoundFontException>(
+                () => Loader.Load(new MemoryStream(sf2)),
+                "ibag modEnd > imod.Length must throw InvalidSoundFontException, not Array.Copy out-of-range.");
+        }
+
+        // ── W2: Sf2Generator model accessor unit tests ────────────────────────────────────────────
+
+        [Test]
+        [Description("W2: Sf2Generator.AmountInt16 must reinterpret the raw ushort as a signed 16-bit integer.")]
+        public void Generator_AmountInt16_ReturnsSignedInterpretation() {
+            Sf2Generator gen = new Sf2Generator(Sf2GeneratorType.Pan, 0xFF80);
+
+            Assert.That(gen.AmountInt16, Is.EqualTo(unchecked((short)0xFF80)),
+                "AmountInt16 must cast RawAmount to short; 0xFF80 unsigned = -128 signed.");
+        }
+
+        [Test]
+        [Description("W2: Sf2Generator.LowByte and HighByte must extract the correct halves of RawAmount.")]
+        public void Generator_LowByteHighByte_ExtractCorrectly() {
+            Sf2Generator gen = new Sf2Generator(Sf2GeneratorType.KeyRange, 0xC03A);
+
+            Assert.That(gen.LowByte, Is.EqualTo(0x3A), "LowByte must be the low-order 8 bits.");
+            Assert.That(gen.HighByte, Is.EqualTo(0xC0), "HighByte must be the high-order 8 bits.");
+        }
+
+        // ── W2: Sf2Modulator model accessor unit tests ────────────────────────────────────────────
+
+        [Test]
+        [Description("W2: Sf2Modulator.SourceIsBipolar must return true when bit 9 of SourceOper is set.")]
+        public void Modulator_SourceIsBipolar_DetectsPolarity() {
+            Sf2Modulator bipolar = new Sf2Modulator(0x0200, Sf2GeneratorType.Pan, 500, 0, Sf2TransformType.Linear);
+            Sf2Modulator unipolar = new Sf2Modulator(0x0100, Sf2GeneratorType.Pan, 500, 0, Sf2TransformType.Linear);
+
+            Assert.That(bipolar.SourceIsBipolar, Is.True, "Bit 9 set => bipolar source.");
+            Assert.That(unipolar.SourceIsBipolar, Is.False, "Bit 9 clear => unipolar source.");
+        }
+
+        [Test]
+        [Description("W2: Sf2Modulator.SourceIsDecreasing must return true when bit 8 of SourceOper is set.")]
+        public void Modulator_SourceIsDecreasing_DetectsDirection() {
+            Sf2Modulator decreasing = new Sf2Modulator(0x0100, Sf2GeneratorType.Pan, 500, 0, Sf2TransformType.Linear);
+            Sf2Modulator increasing = new Sf2Modulator(0x0200, Sf2GeneratorType.Pan, 500, 0, Sf2TransformType.Linear);
+
+            Assert.That(decreasing.SourceIsDecreasing, Is.True, "Bit 8 set => MaxToMin (decreasing) direction.");
+            Assert.That(increasing.SourceIsDecreasing, Is.False, "Bit 8 clear => MinToMax (increasing) direction.");
+        }
+
+        [Test]
+        [Description("W2: Sf2Modulator.SourceIsMidiCC must return true when bit 7 of SourceOper is set.")]
+        public void Modulator_SourceIsMidiCC_DetectsControllerType() {
+            Sf2Modulator midiCC = new Sf2Modulator(0x0080, Sf2GeneratorType.Pan, 500, 0, Sf2TransformType.Linear);
+            Sf2Modulator general = new Sf2Modulator(0x0000, Sf2GeneratorType.Pan, 500, 0, Sf2TransformType.Linear);
+
+            Assert.That(midiCC.SourceIsMidiCC, Is.True, "Bit 7 set => MIDI CC source.");
+            Assert.That(general.SourceIsMidiCC, Is.False, "Bit 7 clear => general controller source.");
+        }
+
         private sealed class NonSeekableStream : System.IO.Stream {
             private readonly System.IO.MemoryStream _inner;
             public NonSeekableStream(byte[] data) => _inner = new System.IO.MemoryStream(data);
