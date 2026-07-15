@@ -14,9 +14,9 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// </summary>
         public const float DefaultSmoothingSeconds = 0.005f;
 
-        float _current;
-        float _target;
-        readonly float _maxStepPerFrame;
+        float current;
+        float target;
+        readonly float maxStepPerFrame;
 
         /// <summary>
         /// Creates a <see cref="GainRamp"/> starting at zero, targeting zero.
@@ -28,41 +28,41 @@ namespace Pooshit.AudioSynth.Synthesis {
                 throw new ArgumentOutOfRangeException(nameof(sampleRate));
             if (smoothingSeconds <= 0f)
                 throw new ArgumentOutOfRangeException(nameof(smoothingSeconds));
-            _current = 0f;
-            _target = 0f;
-            _maxStepPerFrame = 1f / (smoothingSeconds * sampleRate);
+            current = 0f;
+            target = 0f;
+            maxStepPerFrame = 1f / (smoothingSeconds * sampleRate);
         }
 
         /// <summary>
         /// Current gain value; equals the value returned by the most recent <see cref="AdvanceFrame"/> call.
         /// </summary>
-        public float Current => _current;
+        public float Current => current;
 
         /// <summary>
         /// True when the gain has converged to its target.
         /// </summary>
-        public bool IsAtTarget => _current == _target;
+        public bool IsAtTarget => current == target;
 
         /// <summary>
         /// Sets a new target gain; the ramp continues from the current value without jumping.
         /// </summary>
         /// <param name="target">desired gain; typically in the range [0, 1]</param>
         public void SetTarget(float target) {
-            _target = target;
+            this.target = target;
         }
 
         /// <summary>
         /// Advances the gain by one frame toward the target and returns the gain for that frame.
         /// </summary>
         public float AdvanceFrame() {
-            float diff = _target - _current;
-            if (diff > _maxStepPerFrame)
-                _current += _maxStepPerFrame;
-            else if (diff < -_maxStepPerFrame)
-                _current -= _maxStepPerFrame;
+            float diff = target - current;
+            if (diff > maxStepPerFrame)
+                current += maxStepPerFrame;
+            else if (diff < -maxStepPerFrame)
+                current -= maxStepPerFrame;
             else
-                _current = _target;
-            return _current;
+                current = target;
+            return current;
         }
     }
 }

@@ -10,8 +10,8 @@ namespace Pooshit.AudioSynth.Synthesis.Patches {
     /// </summary>
     public sealed class SamplePatch : IPatch {
 
-        readonly SampleRegion _region;
-        readonly int _outputSampleRate;
+        readonly SampleRegion region;
+        readonly int outputSampleRate;
 
         /// <summary>
         /// Creates a <see cref="SamplePatch"/>.
@@ -19,10 +19,10 @@ namespace Pooshit.AudioSynth.Synthesis.Patches {
         /// <param name="region">the sample region to play for every note</param>
         /// <param name="outputSampleRate">engine output sample rate used to compute the pitch increment</param>
         public SamplePatch(SampleRegion region, int outputSampleRate) {
-            _region = region ?? throw new ArgumentNullException(nameof(region));
+            this.region = region ?? throw new ArgumentNullException(nameof(region));
             if (outputSampleRate <= 0)
                 throw new ArgumentOutOfRangeException(nameof(outputSampleRate));
-            _outputSampleRate = outputSampleRate;
+            this.outputSampleRate = outputSampleRate;
         }
 
         /// <summary>
@@ -31,10 +31,10 @@ namespace Pooshit.AudioSynth.Synthesis.Patches {
         /// <param name="key">MIDI key number (0–127)</param>
         /// <param name="velocity">MIDI velocity (0–127); mapped linearly to gain</param>
         public IVoice StartVoice(int key, int velocity) {
-            double semitones = (key - _region.RootKey) + _region.PitchCorrectionCents / 100.0;
-            float pitchIncrement = (float)(Math.Pow(2.0, semitones / 12.0) * _region.SourceSampleRate / (double)_outputSampleRate);
+            double semitones = (key - region.RootKey) + region.PitchCorrectionCents / 100.0;
+            float pitchIncrement = (float)(Math.Pow(2.0, semitones / 12.0) * region.SourceSampleRate / (double)outputSampleRate);
             float targetGain = velocity / 127f;
-            return new SamplePlaybackVoice(_region, pitchIncrement, targetGain, _outputSampleRate);
+            return new SamplePlaybackVoice(region, pitchIncrement, targetGain, outputSampleRate);
         }
     }
 }

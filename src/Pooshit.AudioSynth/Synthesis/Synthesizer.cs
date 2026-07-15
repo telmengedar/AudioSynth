@@ -11,12 +11,12 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// </summary>
     public sealed class Synthesizer : ISynthesizer {
 
-        readonly SynthesizerOptions _options;
-        readonly IPatch _defaultPatch;
-        readonly VoiceSlot[] _pool;
-        readonly float[] _scratch;
-        readonly float[] _master;
-        readonly float _panGain;
+        readonly SynthesizerOptions options;
+        readonly IPatch defaultPatch;
+        readonly VoiceSlot[] pool;
+        readonly float[] scratch;
+        readonly float[] master;
+        readonly float panGain;
 
         /// <summary>
         /// Creates a <see cref="Synthesizer"/> with the given options and a single default patch
@@ -25,13 +25,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <param name="options">immutable engine configuration</param>
         /// <param name="defaultPatch">patch used to start voices for all note-on events</param>
         public Synthesizer(SynthesizerOptions options, IPatch defaultPatch) {
-            _options = options ?? throw new ArgumentNullException(nameof(options));
-            _defaultPatch = defaultPatch ?? throw new ArgumentNullException(nameof(defaultPatch));
+            this.options = options ?? throw new ArgumentNullException(nameof(options));
+            this.defaultPatch = defaultPatch ?? throw new ArgumentNullException(nameof(defaultPatch));
             Format = new AudioFormat(options.SampleRate, options.Channels);
-            _pool = new VoiceSlot[options.MaxVoices];
-            _scratch = new float[options.BlockFrames];
-            _master = new float[options.BlockFrames * options.Channels];
-            _panGain = (float)(1.0 / Math.Sqrt(options.Channels));
+            pool = new VoiceSlot[options.MaxVoices];
+            scratch = new float[options.BlockFrames];
+            master = new float[options.BlockFrames * options.Channels];
+            panGain = (float)(1.0 / Math.Sqrt(options.Channels));
         }
 
         /// <inheritdoc/>
@@ -43,8 +43,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             if (freeSlot < 0)
                 return;
 
-            IVoice voice = _defaultPatch.StartVoice(key, velocity);
-            ref VoiceSlot slot = ref _pool[freeSlot];
+            IVoice voice = defaultPatch.StartVoice(key, velocity);
+            ref VoiceSlot slot = ref pool[freeSlot];
             slot.IsOccupied = true;
             slot.Channel = channel;
             slot.Key = key;
@@ -53,8 +53,8 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         /// <inheritdoc/>
         public void NoteOff(int channel, int key) {
-            for (int i = 0; i < _pool.Length; i++) {
-                ref VoiceSlot slot = ref _pool[i];
+            for (int i = 0; i < pool.Length; i++) {
+                ref VoiceSlot slot = ref pool[i];
                 if (slot.IsOccupied && slot.Channel == channel && slot.Key == key)
                     slot.Voice!.Release();
             }
@@ -62,13 +62,13 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         /// <inheritdoc/>
         public int Read(Span<float> destination) {
-            if (destination.Length % _options.Channels != 0)
+            if (destination.Length % options.Channels != 0)
                 throw new ArgumentException(
-                    $"destination length ({destination.Length}) must be a multiple of the channel count ({_options.Channels}).",
+                    $"destination length ({destination.Length}) must be a multiple of the channel count ({options.Channels}).",
                     nameof(destination));
 
-            int channels = _options.Channels;
-            int blockFrames = _options.BlockFrames;
+            int channels = options.Channels;
+            int blockFrames = options.BlockFrames;
             int totalSamples = destination.Length;
             int written = 0;
 
@@ -79,13 +79,13 @@ namespace Pooshit.AudioSynth.Synthesis {
                     : blockFrames * channels;
                 int frames = blockSamples / channels;
 
-                Span<float> masterSlice = _master.AsSpan(0, frames * channels);
+                Span<float> masterSlice = master.AsSpan(0, frames * channels);
                 masterSlice.Clear();
 
-                Span<float> scratchSlice = _scratch.AsSpan(0, frames);
+                Span<float> scratchSlice = scratch.AsSpan(0, frames);
 
-                for (int v = 0; v < _pool.Length; v++) {
-                    ref VoiceSlot slot = ref _pool[v];
+                for (int v = 0; v < pool.Length; v++) {
+                    ref VoiceSlot slot = ref pool[v];
                     if (!slot.IsOccupied)
                         continue;
 
@@ -93,7 +93,7 @@ namespace Pooshit.AudioSynth.Synthesis {
                     slot.Voice!.RenderBlock(scratchSlice);
 
                     for (int frame = 0; frame < frames; frame++) {
-                        float mixed = scratchSlice[frame] * _panGain;
+                        float mixed = scratchSlice[frame] * panGain;
                         int baseIndex = frame * channels;
                         for (int ch = 0; ch < channels; ch++)
                             masterSlice[baseIndex + ch] += mixed;
@@ -115,8 +115,8 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         int FindFreeSlot() {
-            for (int i = 0; i < _pool.Length; i++) {
-                if (!_pool[i].IsOccupied)
+            for (int i = 0; i < pool.Length; i++) {
+                if (!pool[i].IsOccupied)
                     return i;
             }
             return -1;
