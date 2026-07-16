@@ -6,6 +6,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
     /// The raw sample-data pool from the SF2 sdta chunk: either 16-bit (smpl only) or 24-bit
     /// (smpl + sm24 extension).  Sample values are stored in the original little-endian SF2 layout
     /// and are accessed via <see cref="GetSample"/> which applies correct 24-bit sign-extension.
+    /// A lazily-built, cached normalized <see cref="FloatPool"/> is shared by all patches from the file.
     /// </summary>
     public sealed class Sf2SampleData {
 
@@ -34,6 +35,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             BitsPerSample = 24;
         }
 
+        float[]? floatPool;
+
         /// <summary>
         /// The smpl chunk data: one signed int16 per sample frame.  For 16-bit pools this is the
         /// full sample.  For 24-bit pools this holds the high 16 bits of each 24-bit sample.
@@ -55,6 +58,24 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// Total number of sample frames in the pool.
         /// </summary>
         public int FrameCount => Smpl.Length;
+
+        /// <summary>
+        /// Shared cached normalized float pool: one float per frame, values in [−1, 1],
+        /// built once on first access via <c>GetSample(i) / 2^(BitsPerSample−1)</c>.
+        /// The same array is returned on every call for the lifetime of this instance.
+        /// </summary>
+        public float[] FloatPool {
+            get {
+                if (floatPool is null) {
+                    float scale = 1f / (1 << (BitsPerSample - 1));
+                    float[] built = new float[Smpl.Length];
+                    for (int i = 0; i < built.Length; i++)
+                        built[i] = GetSample(i) * scale;
+                    floatPool = built;
+                }
+                return floatPool;
+            }
+        }
 
         /// <summary>
         /// Returns the sample at <paramref name="index"/> as a sign-extended 32-bit integer.

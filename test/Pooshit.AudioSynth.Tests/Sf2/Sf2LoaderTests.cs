@@ -162,15 +162,16 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
-        [Description("Sf2Patch.StartVoice must throw NotImplementedException (voice engine is a future PR).")]
-        public void Sf2Patch_StartVoice_ThrowsNotImplementedException() {
+        [Description("StartVoice returns an inactive voice when the preset has no resolvable instrument zones.")]
+        public void Sf2Patch_StartVoice_ReturnsInactiveVoiceWhenNoZoneMatches() {
             byte[] sf2 = Sf2TestBuilder.BuildWithOnePreset();
             IReadOnlyList<IPatch> patches = Loader.Load(new MemoryStream(sf2));
             IPatch patch = patches[0];
 
-            Assert.Throws<System.NotImplementedException>(
-                () => patch.StartVoice(60, 100),
-                "StartVoice must throw NotImplementedException until the voice engine is implemented.");
+            IVoice voice = patch.StartVoice(60, 100);
+
+            Assert.That(voice.IsActive, Is.False,
+                "A preset with no Instrument generator yields an inactive no-op voice on no-match.");
         }
 
         [Test]

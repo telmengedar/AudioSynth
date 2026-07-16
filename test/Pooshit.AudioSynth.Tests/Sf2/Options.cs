@@ -2,7 +2,7 @@ using System.Collections.Generic;
 
 namespace Pooshit.AudioSynth.Tests {
 
-    /// <summary>Mutable knobs driving <c>Sf2TestBuilder</c>; each flag injects one malformed-input scenario.</summary>
+    /// <summary>Mutable knobs driving <c>Sf2TestBuilder</c>; each flag injects one scenario.</summary>
     internal sealed class Options {
         public string RiffTag { get; set; } = "RIFF";
         public string SfbkTag { get; set; } = "sfbk";
@@ -45,6 +45,31 @@ namespace Pooshit.AudioSynth.Tests {
 
         /// <summary>ibag terminal declares modIdx=5 while imod has 0 real modulators — trips BuildZones modEnd>mods.Length guard.</summary>
         public bool BadIbagModEnd { get; set; }
+
+        /// <summary>
+        /// When true, emits a fully resolvable preset: preset zone with Instrument(41)=0, instrument
+        /// zone with KeyRange+SampleID(53)=0, and a non-silent sample in smpl.  Required generators
+        /// are emitted with correct bag/gen indices so the zone resolves through <c>Sf2RegionResolver</c>.
+        /// </summary>
+        public bool HasResolvableZones { get; set; }
+
+        /// <summary>SampleModes(54) raw amount for the resolvable instrument zone (0=NoLoop, 1=Continuous).</summary>
+        public int ResolvableSampleModes { get; set; }
+
+        /// <summary>OverridingRootKey(58) value for the resolvable zone; -1 means omit the generator.</summary>
+        public int OverridingRootKey { get; set; } = -1;
+
+        /// <summary>CoarseTune(51) semitone offset for the resolvable zone; 0 means omit the generator.</summary>
+        public int CoarseTune { get; set; }
+
+        /// <summary>FineTune(52) cent offset for the resolvable zone; 0 means omit the generator.</summary>
+        public int FineTune { get; set; }
+
+        /// <summary>Key-range low bound for the resolvable instrument zone (default 0).</summary>
+        public int KeyRangeLo { get; set; }
+
+        /// <summary>Key-range high bound for the resolvable instrument zone (default 127).</summary>
+        public int KeyRangeHi { get; set; } = 127;
 
         public bool Omit(string tag) =>
             MissingPdtaTags != null && MissingPdtaTags.Contains(tag);

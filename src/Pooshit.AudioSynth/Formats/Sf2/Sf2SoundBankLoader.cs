@@ -19,6 +19,21 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
     /// </remarks>
     public sealed class Sf2SoundBankLoader : ISoundBankLoader {
 
+        readonly int outputSampleRate;
+
+        /// <summary>
+        /// Creates an <see cref="Sf2SoundBankLoader"/>.
+        /// </summary>
+        /// <param name="outputSampleRate">
+        /// Engine output sample rate stamped onto every <see cref="Sf2Patch"/>; defaults to 44100.
+        /// Must match the <see cref="Pooshit.AudioSynth.Synthesis.Synthesizer"/> rate the patches will be played through.
+        /// </param>
+        public Sf2SoundBankLoader(int outputSampleRate = 44100) {
+            if (outputSampleRate <= 0)
+                throw new ArgumentOutOfRangeException(nameof(outputSampleRate));
+            this.outputSampleRate = outputSampleRate;
+        }
+
         /// <inheritdoc/>
         public string FormatId => "sf2";
 
@@ -27,19 +42,19 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             if (source is null) throw new ArgumentNullException(nameof(source));
 
             if (source.CanSeek)
-                return ParseSeekable(source);
+                return ParseSeekable(source, outputSampleRate);
 
             using (MemoryStream ms = new MemoryStream()) {
                 source.CopyTo(ms);
                 ms.Position = 0;
-                return ParseSeekable(ms);
+                return ParseSeekable(ms, outputSampleRate);
             }
         }
 
-        private static IReadOnlyList<IPatch> ParseSeekable(Stream source) {
+        static IReadOnlyList<IPatch> ParseSeekable(Stream source, int rate) {
             using (BinaryReader reader = new BinaryReader(source, Encoding.ASCII, leaveOpen: true)) {
                 try {
-                    return ParseSoundFont(reader);
+                    return ParseSoundFont(reader, rate);
                 } catch (InvalidSoundFontException) {
                     throw;
                 } catch (EndOfStreamException ex) {
@@ -49,7 +64,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             }
         }
 
-        private static IReadOnlyList<IPatch> ParseSoundFont(BinaryReader reader) {
+        static IReadOnlyList<IPatch> ParseSoundFont(BinaryReader reader, int rate) {
             string riffTag = ReadTag(reader);
             if (riffTag != "RIFF")
                 throw new InvalidSoundFontException(
@@ -114,7 +129,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 throw new InvalidSoundFontException(
                     "Missing required pdta LIST chunk; preset/instrument data not found.");
 
-            return BuildPatches(presets, instruments!, sampleHeaders!, sampleData);
+            return BuildPatches(presets, instruments!, sampleHeaders!, sampleData, rate);
         }
 
         private static void ParseInfo(BinaryReader reader, long listEnd, long riffEnd) {
@@ -458,15 +473,16 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             return zones;
         }
 
-        private static IReadOnlyList<IPatch> BuildPatches(
+        static IReadOnlyList<IPatch> BuildPatches(
             Sf2PresetHeader[] presets,
             Sf2Instrument[] instruments,
             Sf2SampleHeader[] sampleHeaders,
-            Sf2SampleData sampleData) {
+            Sf2SampleData sampleData,
+            int rate) {
 
             List<IPatch> patches = new List<IPatch>(presets.Length);
             foreach (Sf2PresetHeader preset in presets)
-                patches.Add(new Sf2Patch(preset, instruments, sampleHeaders, sampleData));
+                patches.Add(new Sf2Patch(preset, instruments, sampleHeaders, sampleData, rate));
             return patches.AsReadOnly();
         }
 

@@ -32,6 +32,39 @@ namespace Pooshit.AudioSynth.Tests {
             });
 
         /// <summary>
+        /// Builds a fully resolvable SF2: one preset zone pointing to one instrument zone, which
+        /// maps to a non-silent full-scale sample.  The SF2 is loadable and <c>StartVoice</c> will
+        /// produce a live <c>SamplePlaybackVoice</c> for any key in [0, 127].
+        /// </summary>
+        /// <param name="smpl">sample data; defaults to 1024 full-scale (+32767) 16-bit frames.</param>
+        /// <param name="sampleModes">SampleModes(54) value: 0=NoLoop, 1=Continuous.</param>
+        /// <param name="overridingRootKey">OverridingRootKey(58) value; -1 to omit the generator.</param>
+        /// <param name="coarseTune">CoarseTune(51) in semitones; 0 to omit the generator.</param>
+        /// <param name="fineTune">FineTune(52) in cents; 0 to omit the generator.</param>
+        /// <param name="keyRangeLo">key-range low bound for the instrument zone (default 0).</param>
+        /// <param name="keyRangeHi">key-range high bound for the instrument zone (default 127).</param>
+        public static byte[] BuildWithResolvablePreset(
+            short[]? smpl = null,
+            int sampleModes = 1,
+            int overridingRootKey = -1,
+            int coarseTune = 0,
+            int fineTune = 0,
+            int keyRangeLo = 0,
+            int keyRangeHi = 127) {
+            short[] data = smpl ?? FullScaleSample(1024);
+            return Build(new Options {
+                HasResolvableZones = true,
+                Smpl = data,
+                ResolvableSampleModes = sampleModes,
+                OverridingRootKey = overridingRootKey,
+                CoarseTune = coarseTune,
+                FineTune = fineTune,
+                KeyRangeLo = keyRangeLo,
+                KeyRangeHi = keyRangeHi
+            });
+        }
+
+        /// <summary>
         /// Builds a valid SF2 with one 24-bit sample whose smpl word is <paramref name="smplWord"/>
         /// and whose sm24 LSB is <paramref name="sm24Byte"/>.
         /// </summary>
@@ -138,9 +171,24 @@ namespace Pooshit.AudioSynth.Tests {
         public static byte[] BuildBadIbagModEnd() =>
             Build(new Options { HasOnePreset = true, BadIbagModEnd = true });
 
+        static short[] FullScaleSample(int frames) {
+            short[] result = new short[frames];
+            for (int i = 0; i < frames; i++)
+                result[i] = 32767;
+            return result;
+        }
+
+        static int CountResolvableIgen(Options opts) {
+            int count = 3;
+            if (opts.OverridingRootKey >= 0) count++;
+            if (opts.CoarseTune != 0) count++;
+            if (opts.FineTune != 0) count++;
+            return count;
+        }
+
         private const int MaxSafeArrayBytesConst = 256 * 1024 * 1024;
 
-        private static byte[] Build(Options opts) {
+        static byte[] Build(Options opts) {
             byte[] info = MakeInfoList();
             byte[] sdta = MakeSdtaList(opts);
             byte[] pdta = MakePdtaList(opts);
@@ -160,13 +208,13 @@ namespace Pooshit.AudioSynth.Tests {
             return ms.ToArray();
         }
 
-        private static byte[] MakeInfoList() {
+        static byte[] MakeInfoList() {
             byte[] ifil = MakeChunk("ifil", Concat(LE16(2), LE16(0)));
             byte[] inam = MakeChunk("inam", PadEven(Encoding.ASCII.GetBytes("Test\0")));
             return MakeList("INFO", Concat(ifil, inam));
         }
 
-        private static byte[] MakeSdtaList(Options opts) {
+        static byte[] MakeSdtaList(Options opts) {
             byte[] smplChunk;
 
             if (opts.NegativeSmplSize) {
@@ -193,11 +241,20 @@ namespace Pooshit.AudioSynth.Tests {
             return MakeList("sdta", smplChunk);
         }
 
-        private static byte[] MakePdtaList(Options opts) {
-            int totalPbagEntries = (opts.HasOnePreset && !opts.BadPhdrBagStart) ? 2 : 1;
-            int totalIbagEntries = (opts.HasOnePreset && !opts.BadInstBagStart) ? 2 : 1;
+        static byte[] MakePdtaList(Options opts) {
+            int totalPbagEntries = opts.HasResolvableZones ? 2
+                : (opts.HasOnePreset && !opts.BadPhdrBagStart) ? 2 : 1;
+            int totalIbagEntries = opts.HasResolvableZones ? 2
+                : (opts.HasOnePreset && !opts.BadInstBagStart) ? 2 : 1;
 
-            ushort ibagTermGenIdx = opts.BadIbagGenEnd ? (ushort)5 : (ushort)0;
+            ushort ibagTermGenIdx;
+            if (opts.BadIbagGenEnd)
+                ibagTermGenIdx = 5;
+            else if (opts.HasResolvableZones)
+                ibagTermGenIdx = (ushort)CountResolvableIgen(opts);
+            else
+                ibagTermGenIdx = 0;
+
             ushort ibagTermModIdx = opts.BadIbagModEnd ? (ushort)5 : (ushort)0;
 
             byte[] phdrBytes;
@@ -211,11 +268,11 @@ namespace Pooshit.AudioSynth.Tests {
 
             byte[] pbagBytes = MakePbag(opts, totalPbagEntries);
             byte[] pmodBytes = MakePmod();
-            byte[] pgenBytes = MakePgen();
+            byte[] pgenBytes = MakePgen(opts);
             byte[] instBytes = MakeInst(opts);
-            byte[] ibagBytes = MakeIbag(totalIbagEntries, ibagTermGenIdx, ibagTermModIdx);
+            byte[] ibagBytes = MakeIbag(opts, totalIbagEntries, ibagTermGenIdx, ibagTermModIdx);
             byte[] imodBytes = MakeImod();
-            byte[] igenBytes = MakeIgen();
+            byte[] igenBytes = MakeIgen(opts);
             byte[] shdrBytes = MakeShdr(opts);
 
             List<byte[]> parts = new List<byte[]>();
@@ -233,10 +290,16 @@ namespace Pooshit.AudioSynth.Tests {
             return MakeList("pdta", Concat(parts.ToArray()));
         }
 
-        private static byte[] MakePhdr(Options opts) {
-            if (!opts.HasOnePreset) {
+        static byte[] MakePhdr(Options opts) {
+            if (!opts.HasOnePreset && !opts.HasResolvableZones) {
                 byte[] eop = MakePresetRecord("EOP", 255, 255, 0);
                 return MakeChunk("phdr", eop);
+            }
+
+            if (opts.HasResolvableZones) {
+                byte[] p0 = MakePresetRecord("ResPreset", 0, 0, 0);
+                byte[] terminal = MakePresetRecord("EOP", 255, 255, 1);
+                return MakeChunk("phdr", Concat(p0, terminal));
             }
 
             if (opts.BadPhdrBagStart) {
@@ -251,16 +314,22 @@ namespace Pooshit.AudioSynth.Tests {
                 return MakeChunk("phdr", Concat(preset0, eop));
             }
 
-            byte[] p0 = MakePresetRecord("Test Preset", 0, 0, 0);
-            byte[] terminal = MakePresetRecord("EOP", 255, 255, 1);
-            return MakeChunk("phdr", Concat(p0, terminal));
+            byte[] p = MakePresetRecord("Test Preset", 0, 0, 0);
+            byte[] term = MakePresetRecord("EOP", 255, 255, 1);
+            return MakeChunk("phdr", Concat(p, term));
         }
 
-        private static byte[] MakePresetRecord(string name, int patch, int bank, ushort bagIdx) =>
+        static byte[] MakePresetRecord(string name, int patch, int bank, ushort bagIdx) =>
             Concat(Name20(name), LE16((ushort)patch), LE16((ushort)bank), LE16(bagIdx),
                    LE32(0), LE32(0), LE32(0));
 
-        private static byte[] MakePbag(Options opts, int totalEntries) {
+        static byte[] MakePbag(Options opts, int totalEntries) {
+            if (opts.HasResolvableZones) {
+                byte[] zone0 = MakeBagRecord(0, 0);
+                byte[] term = MakeBagRecord(1, 0);
+                return MakeChunk("pbag", Concat(zone0, term));
+            }
+
             if (!opts.HasOnePreset) {
                 return MakeChunk("pbag", MakeBagRecord(0, 0));
             }
@@ -271,21 +340,32 @@ namespace Pooshit.AudioSynth.Tests {
                 return MakeChunk("pbag", Concat(zone0bad, terminal));
             }
 
-            byte[] zone0 = MakeBagRecord(0, 0);
-            byte[] term = MakeBagRecord(0, 0);
-            return MakeChunk("pbag", Concat(zone0, term));
+            byte[] zone0Std = MakeBagRecord(0, 0);
+            byte[] termStd = MakeBagRecord(0, 0);
+            return MakeChunk("pbag", Concat(zone0Std, termStd));
         }
 
-        private static byte[] MakeBagRecord(ushort genIdx, ushort modIdx) =>
+        static byte[] MakeBagRecord(ushort genIdx, ushort modIdx) =>
             Concat(LE16(genIdx), LE16(modIdx));
 
-        private static byte[] MakePmod() =>
+        static byte[] MakePmod() =>
             MakeChunk("pmod", ZeroModulatorRecord());
 
-        private static byte[] MakePgen() =>
-            MakeChunk("pgen", ZeroGeneratorRecord());
+        static byte[] MakePgen(Options opts) {
+            if (opts.HasResolvableZones) {
+                byte[] instrGen = MakeGeneratorRecord((ushort)Pooshit.AudioSynth.Formats.Sf2.Sf2GeneratorType.Instrument, 0);
+                return MakeChunk("pgen", Concat(instrGen, ZeroGeneratorRecord()));
+            }
+            return MakeChunk("pgen", ZeroGeneratorRecord());
+        }
 
-        private static byte[] MakeInst(Options opts) {
+        static byte[] MakeInst(Options opts) {
+            if (opts.HasResolvableZones) {
+                byte[] i0 = MakeInstRecord("ResInst", 0);
+                byte[] terminal = MakeInstRecord("EOI", 1);
+                return MakeChunk("inst", Concat(i0, terminal));
+            }
+
             if (!opts.HasOnePreset) {
                 byte[] eoi = MakeInstRecord("EOI", 0);
                 return MakeChunk("inst", eoi);
@@ -303,15 +383,15 @@ namespace Pooshit.AudioSynth.Tests {
                 return MakeChunk("inst", Concat(inst0, eoi));
             }
 
-            byte[] i0 = MakeInstRecord("Test Inst", 0);
-            byte[] terminal = MakeInstRecord("EOI", 1);
-            return MakeChunk("inst", Concat(i0, terminal));
+            byte[] i0Std = MakeInstRecord("Test Inst", 0);
+            byte[] termStd = MakeInstRecord("EOI", 1);
+            return MakeChunk("inst", Concat(i0Std, termStd));
         }
 
-        private static byte[] MakeInstRecord(string name, ushort bagIdx) =>
+        static byte[] MakeInstRecord(string name, ushort bagIdx) =>
             Concat(Name20(name), LE16(bagIdx));
 
-        private static byte[] MakeIbag(int totalEntries, ushort termGenIdx, ushort termModIdx) {
+        static byte[] MakeIbag(Options opts, int totalEntries, ushort termGenIdx, ushort termModIdx) {
             if (totalEntries == 1)
                 return MakeChunk("ibag", MakeBagRecord(termGenIdx, termModIdx));
             byte[] zone0 = MakeBagRecord(0, 0);
@@ -319,21 +399,51 @@ namespace Pooshit.AudioSynth.Tests {
             return MakeChunk("ibag", Concat(zone0, term));
         }
 
-        private static byte[] MakeImod() =>
+        static byte[] MakeImod() =>
             MakeChunk("imod", ZeroModulatorRecord());
 
-        private static byte[] MakeIgen() =>
-            MakeChunk("igen", ZeroGeneratorRecord());
+        static byte[] MakeIgen(Options opts) {
+            if (!opts.HasResolvableZones)
+                return MakeChunk("igen", ZeroGeneratorRecord());
 
-        private static byte[] MakeShdr(Options opts) {
-            byte[] eos = MakeSampleRecord("EOS", 0, 0, 0, 0, 0, 0, 0, 0, 0);
-            if (!opts.HasOnePreset)
-                return MakeChunk("shdr", eos);
-            byte[] sample0 = MakeSampleRecord("TestSample", 0, 4, 0, 0, 44100, 60, 0, 0, 1);
-            return MakeChunk("shdr", Concat(sample0, eos));
+            ushort keyRangeAmount = (ushort)(opts.KeyRangeLo | (opts.KeyRangeHi << 8));
+            byte[] keyRangeGen = MakeGeneratorRecord((ushort)Pooshit.AudioSynth.Formats.Sf2.Sf2GeneratorType.KeyRange, keyRangeAmount);
+            byte[] sampleIdGen = MakeGeneratorRecord((ushort)Pooshit.AudioSynth.Formats.Sf2.Sf2GeneratorType.SampleID, 0);
+            byte[] sampleModesGen = MakeGeneratorRecord((ushort)Pooshit.AudioSynth.Formats.Sf2.Sf2GeneratorType.SampleModes, (ushort)opts.ResolvableSampleModes);
+
+            List<byte[]> gens = new List<byte[]> { keyRangeGen, sampleIdGen, sampleModesGen };
+
+            if (opts.OverridingRootKey >= 0)
+                gens.Add(MakeGeneratorRecord((ushort)Pooshit.AudioSynth.Formats.Sf2.Sf2GeneratorType.OverridingRootKey, (ushort)opts.OverridingRootKey));
+            if (opts.CoarseTune != 0)
+                gens.Add(MakeGeneratorRecord((ushort)Pooshit.AudioSynth.Formats.Sf2.Sf2GeneratorType.CoarseTune, (ushort)(short)opts.CoarseTune));
+            if (opts.FineTune != 0)
+                gens.Add(MakeGeneratorRecord((ushort)Pooshit.AudioSynth.Formats.Sf2.Sf2GeneratorType.FineTune, (ushort)(short)opts.FineTune));
+
+            gens.Add(ZeroGeneratorRecord());
+
+            return MakeChunk("igen", Concat(gens.ToArray()));
         }
 
-        private static byte[] MakeSampleRecord(
+        static byte[] MakeShdr(Options opts) {
+            byte[] eos = MakeSampleRecord("EOS", 0, 0, 0, 0, 0, 0, 0, 0, 0);
+
+            if (opts.HasResolvableZones) {
+                int smplLen = opts.Smpl?.Length ?? 0;
+                byte[] sample0 = MakeSampleRecord(
+                    "ResSample", 0, (uint)smplLen, 0, (uint)smplLen,
+                    44100, 60, 0, 0, 1);
+                return MakeChunk("shdr", Concat(sample0, eos));
+            }
+
+            if (!opts.HasOnePreset)
+                return MakeChunk("shdr", eos);
+
+            byte[] sampleStd = MakeSampleRecord("TestSample", 0, 4, 0, 0, 44100, 60, 0, 0, 1);
+            return MakeChunk("shdr", Concat(sampleStd, eos));
+        }
+
+        static byte[] MakeSampleRecord(
             string name,
             uint start, uint end, uint startLoop, uint endLoop,
             uint sampleRate, byte rootKey, sbyte pitchCorr,
@@ -345,21 +455,24 @@ namespace Pooshit.AudioSynth.Tests {
                 new byte[] { rootKey, (byte)pitchCorr },
                 LE16(sampleLink), LE16(sampleType));
 
-        private static byte[] ZeroModulatorRecord() => new byte[10];
+        static byte[] ZeroModulatorRecord() => new byte[10];
 
-        private static byte[] ZeroGeneratorRecord() => new byte[4];
+        static byte[] ZeroGeneratorRecord() => new byte[4];
 
-        private static byte[] MakeChunk(string tag, byte[] data) {
+        static byte[] MakeGeneratorRecord(ushort genOp, ushort amount) =>
+            Concat(LE16(genOp), LE16(amount));
+
+        static byte[] MakeChunk(string tag, byte[] data) {
             byte[] header = Concat(Encoding.ASCII.GetBytes(tag), BitConverter.GetBytes(data.Length));
             return data.Length % 2 == 0
                 ? Concat(header, data)
                 : Concat(header, data, new byte[1]);
         }
 
-        private static byte[] MakeList(string type, byte[] content) =>
+        static byte[] MakeList(string type, byte[] content) =>
             MakeChunk("LIST", Concat(Encoding.ASCII.GetBytes(type), content));
 
-        private static byte[] SmplToBytes(short[] smpl) {
+        static byte[] SmplToBytes(short[] smpl) {
             byte[] result = new byte[smpl.Length * 2];
             for (int i = 0; i < smpl.Length; i++) {
                 byte[] word = BitConverter.GetBytes(smpl[i]);
@@ -369,20 +482,20 @@ namespace Pooshit.AudioSynth.Tests {
             return result;
         }
 
-        private static byte[] Name20(string s) {
+        static byte[] Name20(string s) {
             byte[] b = new byte[20];
             for (int i = 0; i < s.Length && i < 20; i++) b[i] = (byte)s[i];
             return b;
         }
 
-        private static byte[] PadEven(byte[] data) =>
+        static byte[] PadEven(byte[] data) =>
             data.Length % 2 == 0 ? data : Concat(data, new byte[] { 0 });
 
-        private static byte[] LE16(ushort v) => BitConverter.GetBytes(v);
-        private static byte[] LE32(uint v) => BitConverter.GetBytes(v);
-        private static byte[] LE32(int v) => BitConverter.GetBytes(v);
+        static byte[] LE16(ushort v) => BitConverter.GetBytes(v);
+        static byte[] LE32(uint v) => BitConverter.GetBytes(v);
+        static byte[] LE32(int v) => BitConverter.GetBytes(v);
 
-        private static byte[] Concat(params byte[][] parts) {
+        static byte[] Concat(params byte[][] parts) {
             int total = 0;
             foreach (byte[] p in parts) total += p.Length;
             byte[] result = new byte[total];
