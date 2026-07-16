@@ -31,11 +31,11 @@ namespace Pooshit.AudioSynth.Tests {
             Sf2SampleHeader? header = null,
             short[]? smpl = null) {
             short[] pool = smpl ?? BuildFullScalePool(8);
-            var data = new Sf2SampleData(pool);
-            var hdr = header ?? Header(0, (uint)pool.Length, 0, (uint)pool.Length);
-            var instrument = new Sf2Instrument("Inst", instrumentZones);
-            var preset = new Sf2PresetHeader("P", 0, 0, presetZones);
-            var resolver = new Sf2RegionResolver(preset, new[] { instrument }, new[] { hdr }, data.FloatPool);
+            Sf2SampleData data = new Sf2SampleData(pool);
+            Sf2SampleHeader hdr = header ?? Header(0, (uint)pool.Length, 0, (uint)pool.Length);
+            Sf2Instrument instrument = new Sf2Instrument("Inst", instrumentZones);
+            Sf2PresetHeader preset = new Sf2PresetHeader("P", 0, 0, presetZones);
+            Sf2RegionResolver resolver = new Sf2RegionResolver(preset, new[] { instrument }, new[] { hdr }, data.FloatPool);
             return (resolver, data);
         }
 
@@ -46,7 +46,7 @@ namespace Pooshit.AudioSynth.Tests {
             ushort keyRangeAmount = (ushort)(keyLo | (keyHi << 8));
             Sf2Generator keyRange = Gen(Sf2GeneratorType.KeyRange, keyRangeAmount);
             Sf2Generator sampleId = Gen(Sf2GeneratorType.SampleID, 0);
-            var all = new Sf2Generator[2 + extras.Length];
+            Sf2Generator[] all = new Sf2Generator[2 + extras.Length];
             all[0] = keyRange;
             all[1] = sampleId;
             for (int i = 0; i < extras.Length; i++)
@@ -64,7 +64,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("TryResolve returns true when key falls within the instrument zone's key range.")]
         public void TryResolve_KeyInRange_ReturnsTrue() {
-            var (resolver, _) = BuildResolver(
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { InstrumentZone(50, 70) });
 
@@ -76,7 +76,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("TryResolve returns false when key falls outside the instrument zone's key range.")]
         public void TryResolve_KeyOutOfRange_ReturnsFalse() {
-            var (resolver, _) = BuildResolver(
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { InstrumentZone(50, 59) });
 
@@ -88,8 +88,8 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("TryResolve returns false when no preset zone carries an Instrument(41) generator.")]
         public void TryResolve_NoInstrumentGen_ReturnsFalse() {
-            var zones = new[] { Zone() };
-            var (resolver, _) = BuildResolver(zones, new[] { InstrumentZone(0, 127) });
+            Sf2Zone[] zones = new[] { Zone() };
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(zones, new[] { InstrumentZone(0, 127) });
 
             bool found = resolver.TryResolve(60, 100, out _, out _);
 
@@ -99,9 +99,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Global instrument zone provides FineTune default when the local zone has none.")]
         public void TryResolve_GlobalZoneFineTune_AppliedWhenLocalHasNone() {
-            var globalZone = Zone(Gen(Sf2GeneratorType.FineTune, (ushort)(short)30));
-            var localZone = InstrumentZone(0, 127);
-            var (resolver, _) = BuildResolver(
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.FineTune, (ushort)(short)30));
+            Sf2Zone localZone = InstrumentZone(0, 127);
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { globalZone, localZone });
 
@@ -115,9 +115,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Local zone FineTune overrides the global zone's FineTune.")]
         public void TryResolve_LocalFineTuneOverridesGlobal() {
-            var globalZone = Zone(Gen(Sf2GeneratorType.FineTune, (ushort)(short)10));
-            var localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FineTune, (ushort)(short)25));
-            var (resolver, _) = BuildResolver(
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.FineTune, (ushort)(short)10));
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FineTune, (ushort)(short)25));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { globalZone, localZone });
 
@@ -131,9 +131,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("OverridingRootKey(58) in 0–127 takes precedence over the sample-header root key.")]
         public void TryResolve_OverridingRootKey_TakesPrecedence() {
-            var header = Header(0, 8, 0, 8, 44100, rootKey: 48);
-            var localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.OverridingRootKey, 72));
-            var (resolver, _) = BuildResolver(
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 48);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.OverridingRootKey, 72));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { localZone },
                 header: header);
@@ -148,9 +148,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Header RootKey is used when no OverridingRootKey generator is present.")]
         public void TryResolve_NoOverrideRootKey_UsesHeaderRootKey() {
-            var header = Header(0, 8, 0, 8, 44100, rootKey: 48);
-            var localZone = InstrumentZone(0, 127);
-            var (resolver, _) = BuildResolver(
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 48);
+            Sf2Zone localZone = InstrumentZone(0, 127);
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { localZone },
                 header: header);
@@ -165,9 +165,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Header RootKey=255 (unpitched) with no OverridingRootKey defaults to key 60 (D3).")]
         public void TryResolve_HeaderRootKey255_DefaultsTo60() {
-            var header = Header(0, 8, 0, 8, 44100, rootKey: 255);
-            var localZone = InstrumentZone(0, 127);
-            var (resolver, _) = BuildResolver(
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 255);
+            Sf2Zone localZone = InstrumentZone(0, 127);
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { localZone },
                 header: header);
@@ -182,8 +182,8 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("CoarseTune(51) is multiplied by 100 and added to pitchCorrectionCents.")]
         public void TryResolve_CoarseTune_MultipliedBy100() {
-            var localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.CoarseTune, (ushort)(short)7));
-            var (resolver, _) = BuildResolver(PresetZoneWithInstrument(), new[] { localZone });
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.CoarseTune, (ushort)(short)7));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { localZone });
 
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
@@ -195,9 +195,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("FineTune(52) plus header PitchCorrection fold into pitchCorrectionCents.")]
         public void TryResolve_FineTuneAndHeaderCorrection_SumInCents() {
-            var header = Header(0, 8, 0, 8, 44100, rootKey: 60, pitchCorrection: 10);
-            var localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FineTune, (ushort)(short)15));
-            var (resolver, _) = BuildResolver(
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 60, pitchCorrection: 10);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FineTune, (ushort)(short)15));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { localZone },
                 header: header);
@@ -212,8 +212,8 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("SampleModes(54)=0 maps to LoopMode.NoLoop.")]
         public void TryResolve_SampleModes0_MapsToNoLoop() {
-            var localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 0));
-            var (resolver, _) = BuildResolver(PresetZoneWithInstrument(), new[] { localZone });
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 0));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { localZone });
 
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
@@ -224,9 +224,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("SampleModes(54)=1 maps to LoopMode.Continuous when loop points are valid.")]
         public void TryResolve_SampleModes1_MapsToContinuous() {
-            var header = Header(0, 8, 0, 8, 44100, rootKey: 60);
-            var localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 1));
-            var (resolver, _) = BuildResolver(
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 60);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 1));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { localZone },
                 header: header);
@@ -240,9 +240,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("SampleModes(54)=3 (loop-until-release) maps to LoopMode.Continuous in v1.")]
         public void TryResolve_SampleModes3_MapsToContiniuousV1() {
-            var header = Header(0, 8, 0, 8, 44100, rootKey: 60);
-            var localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 3));
-            var (resolver, _) = BuildResolver(
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 60);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 3));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { localZone },
                 header: header);
@@ -257,9 +257,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("SampleModes=1 with invalid loop points falls back to NoLoop (defensive §9).")]
         public void TryResolve_SampleModes1_InvalidLoopPoints_FallsBackToNoLoop() {
-            var header = Header(0, 8, 8, 8, 44100, rootKey: 60);
-            var localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 1));
-            var (resolver, _) = BuildResolver(
+            Sf2SampleHeader header = Header(0, 8, 8, 8, 44100, rootKey: 60);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 1));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { localZone },
                 header: header);
@@ -274,7 +274,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Sf2SampleData.FloatPool: full-scale positive 16-bit word normalises to ~+1.0.")]
         public void FloatPool_FullScalePositive_NormalisesNearPlusOne() {
-            var data = new Sf2SampleData(new short[] { 32767 });
+            Sf2SampleData data = new Sf2SampleData(new short[] { 32767 });
 
             float value = data.FloatPool[0];
 
@@ -285,7 +285,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Sf2SampleData.FloatPool: full-scale negative 16-bit word normalises to -1.0.")]
         public void FloatPool_FullScaleNegative_NormalisesNegativeOne() {
-            var data = new Sf2SampleData(new short[] { unchecked((short)-32768) });
+            Sf2SampleData data = new Sf2SampleData(new short[] { unchecked((short)-32768) });
 
             float value = data.FloatPool[0];
 
@@ -297,7 +297,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Description("Sf2SampleData.FloatPool length equals FrameCount.")]
         public void FloatPool_Length_EqualsFrameCount() {
             short[] smpl = new short[42];
-            var data = new Sf2SampleData(smpl);
+            Sf2SampleData data = new Sf2SampleData(smpl);
 
             Assert.That(data.FloatPool.Length, Is.EqualTo(data.FrameCount));
         }
@@ -305,7 +305,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Sf2SampleData.FloatPool returns the same array instance on every call.")]
         public void FloatPool_SameInstanceOnEveryCall() {
-            var data = new Sf2SampleData(new short[] { 100, 200 });
+            Sf2SampleData data = new Sf2SampleData(new short[] { 100, 200 });
 
             float[] first = data.FloatPool;
             float[] second = data.FloatPool;
@@ -317,7 +317,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Resolved cacheKey is consistent across identical note lookups.")]
         public void TryResolve_SameNote_SameCacheKey() {
-            var (resolver, _) = BuildResolver(
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { InstrumentZone(0, 127) });
 
