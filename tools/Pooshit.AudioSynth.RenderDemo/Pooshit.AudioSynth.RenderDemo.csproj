@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Pooshit.AudioSynth.RenderDemo</RootNamespace>
+    <AssemblyName>Pooshit.AudioSynth.RenderDemo</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Pooshit.AudioSynth\Pooshit.AudioSynth.csproj" />
+  </ItemGroup>
+
+</Project>
