@@ -1,0 +1,331 @@
+using System;
+using NUnit.Framework;
+using Pooshit.AudioSynth.Formats.Sf2;
+using Pooshit.AudioSynth.Synthesis;
+
+namespace Pooshit.AudioSynth.Tests {
+
+    /// <summary>
+    /// Unit tests for <see cref="Sf2RegionResolver"/> covering the v1 generator subset:
+    /// zone match hit/miss, global-zone defaults, local-overrides-global, rootKey resolution,
+    /// tune-to-cents mapping, SampleModes-to-LoopMode, and the Sf2SampleData float-pool normalization.
+    /// All tests construct SF2 model objects directly without going through the binary loader.
+    /// </summary>
+    [TestFixture]
+    public class Sf2RegionResolverTests {
+
+        static Sf2Generator Gen(Sf2GeneratorType type, ushort amount) =>
+            new Sf2Generator(type, amount);
+
+        static Sf2Zone Zone(params Sf2Generator[] gens) =>
+            new Sf2Zone(gens, Array.Empty<Sf2Modulator>());
+
+        static Sf2SampleHeader Header(uint start, uint end, uint loopStart, uint loopEnd,
+            uint sampleRate = 44100, byte rootKey = 60, sbyte pitchCorrection = 0) =>
+            new Sf2SampleHeader("S", start, end, loopStart, loopEnd, sampleRate,
+                rootKey, pitchCorrection, 0, Sf2SampleLink.MonoSample);
+
+        static (Sf2RegionResolver resolver, Sf2SampleData sampleData) BuildResolver(
+            Sf2Zone[] presetZones,
+            Sf2Zone[] instrumentZones,
+            Sf2SampleHeader? header = null,
+            short[]? smpl = null) {
+            short[] pool = smpl ?? BuildFullScalePool(8);
+            Sf2SampleData data = new Sf2SampleData(pool);
+            Sf2SampleHeader hdr = header ?? Header(0, (uint)pool.Length, 0, (uint)pool.Length);
+            Sf2Instrument instrument = new Sf2Instrument("Inst", instrumentZones);
+            Sf2PresetHeader preset = new Sf2PresetHeader("P", 0, 0, presetZones);
+            Sf2RegionResolver resolver = new Sf2RegionResolver(preset, new[] { instrument }, new[] { hdr }, data.FloatPool);
+            return (resolver, data);
+        }
+
+        static Sf2Zone[] PresetZoneWithInstrument(int instrIndex = 0) =>
+            new[] { Zone(Gen(Sf2GeneratorType.Instrument, (ushort)instrIndex)) };
+
+        static Sf2Zone InstrumentZone(int keyLo, int keyHi, params Sf2Generator[] extras) {
+            ushort keyRangeAmount = (ushort)(keyLo | (keyHi << 8));
+            Sf2Generator keyRange = Gen(Sf2GeneratorType.KeyRange, keyRangeAmount);
+            Sf2Generator sampleId = Gen(Sf2GeneratorType.SampleID, 0);
+            Sf2Generator[] all = new Sf2Generator[2 + extras.Length];
+            all[0] = keyRange;
+            all[1] = sampleId;
+            for (int i = 0; i < extras.Length; i++)
+                all[2 + i] = extras[i];
+            return new Sf2Zone(all, Array.Empty<Sf2Modulator>());
+        }
+
+        static short[] BuildFullScalePool(int frames) {
+            short[] pool = new short[frames];
+            for (int i = 0; i < frames; i++)
+                pool[i] = 32767;
+            return pool;
+        }
+
+        [Test]
+        [Description("TryResolve returns true when key falls within the instrument zone's key range.")]
+        public void TryResolve_KeyInRange_ReturnsTrue() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(50, 70) });
+
+            bool found = resolver.TryResolve(60, 100, out _, out _);
+
+            Assert.That(found, Is.True, "Key 60 in [50,70] must resolve.");
+        }
+
+        [Test]
+        [Description("TryResolve returns false when key falls outside the instrument zone's key range.")]
+        public void TryResolve_KeyOutOfRange_ReturnsFalse() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(50, 59) });
+
+            bool found = resolver.TryResolve(60, 100, out _, out _);
+
+            Assert.That(found, Is.False, "Key 60 outside [50,59] must not resolve.");
+        }
+
+        [Test]
+        [Description("TryResolve returns false when no preset zone carries an Instrument(41) generator.")]
+        public void TryResolve_NoInstrumentGen_ReturnsFalse() {
+            Sf2Zone[] zones = new[] { Zone() };
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(zones, new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out _, out _);
+
+            Assert.That(found, Is.False, "Preset zone without Instrument gen must not resolve.");
+        }
+
+        [Test]
+        [Description("Global instrument zone provides FineTune default when the local zone has none.")]
+        public void TryResolve_GlobalZoneFineTune_AppliedWhenLocalHasNone() {
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.FineTune, (ushort)(short)30));
+            Sf2Zone localZone = InstrumentZone(0, 127);
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { globalZone, localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.PitchCorrectionCents, Is.EqualTo(30),
+                "FineTune=30 from global zone must appear in pitchCorrectionCents.");
+        }
+
+        [Test]
+        [Description("Local zone FineTune overrides the global zone's FineTune.")]
+        public void TryResolve_LocalFineTuneOverridesGlobal() {
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.FineTune, (ushort)(short)10));
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FineTune, (ushort)(short)25));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { globalZone, localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.PitchCorrectionCents, Is.EqualTo(25),
+                "Local FineTune=25 must override global FineTune=10.");
+        }
+
+        [Test]
+        [Description("OverridingRootKey(58) in 0–127 takes precedence over the sample-header root key.")]
+        public void TryResolve_OverridingRootKey_TakesPrecedence() {
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 48);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.OverridingRootKey, 72));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { localZone },
+                header: header);
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.RootKey, Is.EqualTo(72),
+                "OverridingRootKey(58)=72 must override header RootKey=48.");
+        }
+
+        [Test]
+        [Description("Header RootKey is used when no OverridingRootKey generator is present.")]
+        public void TryResolve_NoOverrideRootKey_UsesHeaderRootKey() {
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 48);
+            Sf2Zone localZone = InstrumentZone(0, 127);
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { localZone },
+                header: header);
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.RootKey, Is.EqualTo(48),
+                "When no OverridingRootKey gen, header RootKey=48 must be used.");
+        }
+
+        [Test]
+        [Description("Header RootKey=255 (unpitched) with no OverridingRootKey defaults to key 60 (D3).")]
+        public void TryResolve_HeaderRootKey255_DefaultsTo60() {
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 255);
+            Sf2Zone localZone = InstrumentZone(0, 127);
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { localZone },
+                header: header);
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.RootKey, Is.EqualTo(60),
+                "Unpitched header RootKey=255 with no override must default to 60.");
+        }
+
+        [Test]
+        [Description("CoarseTune(51) is multiplied by 100 and added to pitchCorrectionCents.")]
+        public void TryResolve_CoarseTune_MultipliedBy100() {
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.CoarseTune, (ushort)(short)7));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.PitchCorrectionCents, Is.EqualTo(700),
+                "CoarseTune=7 semitones must contribute 700 cents.");
+        }
+
+        [Test]
+        [Description("FineTune(52) plus header PitchCorrection fold into pitchCorrectionCents.")]
+        public void TryResolve_FineTuneAndHeaderCorrection_SumInCents() {
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 60, pitchCorrection: 10);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FineTune, (ushort)(short)15));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { localZone },
+                header: header);
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.PitchCorrectionCents, Is.EqualTo(25),
+                "pitchCorrectionCents must be header(10) + FineTune(15) = 25.");
+        }
+
+        [Test]
+        [Description("SampleModes(54)=0 maps to LoopMode.NoLoop.")]
+        public void TryResolve_SampleModes0_MapsToNoLoop() {
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 0));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.LoopMode, Is.EqualTo(LoopMode.NoLoop));
+        }
+
+        [Test]
+        [Description("SampleModes(54)=1 maps to LoopMode.Continuous when loop points are valid.")]
+        public void TryResolve_SampleModes1_MapsToContinuous() {
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 60);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 1));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { localZone },
+                header: header);
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.LoopMode, Is.EqualTo(LoopMode.Continuous));
+        }
+
+        [Test]
+        [Description("SampleModes(54)=3 (loop-until-release) maps to LoopMode.Continuous in v1.")]
+        public void TryResolve_SampleModes3_MapsToContiniuousV1() {
+            Sf2SampleHeader header = Header(0, 8, 0, 8, 44100, rootKey: 60);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 3));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { localZone },
+                header: header);
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.LoopMode, Is.EqualTo(LoopMode.Continuous),
+                "SampleModes=3 (loop-until-release) is Continuous in v1.");
+        }
+
+        [Test]
+        [Description("SampleModes=1 with invalid loop points falls back to NoLoop (defensive §9).")]
+        public void TryResolve_SampleModes1_InvalidLoopPoints_FallsBackToNoLoop() {
+            Sf2SampleHeader header = Header(0, 8, 8, 8, 44100, rootKey: 60);
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SampleModes, 1));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { localZone },
+                header: header);
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.LoopMode, Is.EqualTo(LoopMode.NoLoop),
+                "loopStart=8 >= loopEnd=8 is invalid; resolver must fall back to NoLoop.");
+        }
+
+        [Test]
+        [Description("Sf2SampleData.FloatPool: full-scale positive 16-bit word normalises to ~+1.0.")]
+        public void FloatPool_FullScalePositive_NormalisesNearPlusOne() {
+            Sf2SampleData data = new Sf2SampleData(new short[] { 32767 });
+
+            float value = data.FloatPool[0];
+
+            Assert.That(value, Is.InRange(0.9999f, 1.0001f),
+                "32767 / 32768 must normalise to approximately +1.0.");
+        }
+
+        [Test]
+        [Description("Sf2SampleData.FloatPool: full-scale negative 16-bit word normalises to -1.0.")]
+        public void FloatPool_FullScaleNegative_NormalisesNegativeOne() {
+            Sf2SampleData data = new Sf2SampleData(new short[] { unchecked((short)-32768) });
+
+            float value = data.FloatPool[0];
+
+            Assert.That(value, Is.EqualTo(-1.0f),
+                "-32768 / 32768 must normalise to exactly -1.0.");
+        }
+
+        [Test]
+        [Description("Sf2SampleData.FloatPool length equals FrameCount.")]
+        public void FloatPool_Length_EqualsFrameCount() {
+            short[] smpl = new short[42];
+            Sf2SampleData data = new Sf2SampleData(smpl);
+
+            Assert.That(data.FloatPool.Length, Is.EqualTo(data.FrameCount));
+        }
+
+        [Test]
+        [Description("Sf2SampleData.FloatPool returns the same array instance on every call.")]
+        public void FloatPool_SameInstanceOnEveryCall() {
+            Sf2SampleData data = new Sf2SampleData(new short[] { 100, 200 });
+
+            float[] first = data.FloatPool;
+            float[] second = data.FloatPool;
+
+            Assert.That(ReferenceEquals(first, second), Is.True,
+                "FloatPool must return the same cached array every time.");
+        }
+
+        [Test]
+        [Description("Resolved cacheKey is consistent across identical note lookups.")]
+        public void TryResolve_SameNote_SameCacheKey() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            resolver.TryResolve(60, 100, out _, out long key1);
+            resolver.TryResolve(60, 100, out _, out long key2);
+
+            Assert.That(key1, Is.EqualTo(key2),
+                "The same note must produce the same cacheKey for idempotent caching.");
+        }
+    }
+}
