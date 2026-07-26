@@ -4,10 +4,13 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
 
     /// <summary>
     /// <see cref="IVoice"/> that reads a mono <see cref="SampleRegion"/> at a pitch-derived increment
-    /// with linear interpolation and renders a mono block.  Each frame is scaled by the product of the
-    /// region's DAHDSR <see cref="AmplitudeEnvelope"/> (the note's amplitude contour, which owns the
-    /// click-free onset and the note-off release fade) and a <see cref="GainRamp"/> (the zipper-free
-    /// slew of the velocity-derived scalar gain).  Supports no-loop one-shot and continuous looping.
+    /// with linear interpolation and renders a mono block.  Each interpolated sample passes through the
+    /// region's resonant <see cref="BiquadLowPassFilter"/> (the timbre-shaping stage) before being scaled
+    /// by the product of the region's DAHDSR <see cref="AmplitudeEnvelope"/> (the note's amplitude
+    /// contour, which owns the click-free onset and the note-off release fade) and a <see cref="GainRamp"/>
+    /// (the zipper-free slew of the velocity-derived scalar gain).  The filter sits before the amplifier,
+    /// realising the SF2 signal chain oscillator → low-pass filter → amplifier.  Supports no-loop one-shot
+    /// and continuous looping.
     /// </summary>
     public sealed class SamplePlaybackVoice : IVoice {
 
@@ -15,6 +18,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         readonly float pitchIncrement;
         GainRamp gainRamp;
         AmplitudeEnvelope envelope;
+        BiquadLowPassFilter filter;
         double readPos;
         bool isActive;
         bool released;
@@ -33,6 +37,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
             gainRamp = new GainRamp(outputSampleRate);
             gainRamp.SetTarget(targetGain);
             envelope = new AmplitudeEnvelope(region.Envelope, outputSampleRate);
+            filter = new BiquadLowPassFilter(region.Filter, outputSampleRate);
             readPos = region.Start;
             isActive = true;
             released = false;
@@ -66,6 +71,8 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
                     sample = ReadInterpolated();
                     AdvanceReadPosition();
                 }
+
+                sample = filter.Process(sample);
 
                 block[i] = sample * gain;
 

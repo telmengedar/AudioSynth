@@ -24,7 +24,8 @@ namespace Pooshit.AudioSynth.Tests {
             float[] buf = new float[SampleRate];
             for (int i = 0; i < buf.Length; i++)
                 buf[i] = DcValue;
-            return new SampleRegion(buf, 0, buf.Length, 0, buf.Length, LoopMode.Continuous, SampleRate, 60, 0, envelope);
+            return new SampleRegion(buf, 0, buf.Length, 0, buf.Length, LoopMode.Continuous, SampleRate, 60, 0, envelope,
+                FilterParameters.Default);
         }
 
         static float MaxConsecutiveDelta(float[] samples, int from, int to) {

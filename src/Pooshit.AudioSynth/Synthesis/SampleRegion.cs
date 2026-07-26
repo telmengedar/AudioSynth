@@ -21,6 +21,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <param name="rootKey">MIDI key number at which the sample plays at its original pitch (0–127)</param>
         /// <param name="pitchCorrectionCents">fine-tuning offset in cents applied on top of the key transposition</param>
         /// <param name="envelope">volume-envelope parameters shaping this region's amplitude over the note's life</param>
+        /// <param name="filter">low-pass filter parameters shaping this region's timbre before the amplifier</param>
         public SampleRegion(
             float[] buffer,
             int start,
@@ -31,7 +32,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             int sourceSampleRate,
             int rootKey,
             int pitchCorrectionCents,
-            EnvelopeParameters envelope) {
+            EnvelopeParameters envelope,
+            FilterParameters filter) {
             if (buffer is null)
                 throw new ArgumentNullException(nameof(buffer));
             if (start < 0 || start >= buffer.Length)
@@ -58,6 +60,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             RootKey = rootKey;
             PitchCorrectionCents = pitchCorrectionCents;
             Envelope = envelope;
+            Filter = filter;
         }
 
         /// <summary>
@@ -109,5 +112,10 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// Volume-envelope parameters shaping this region's amplitude over the note's life.
         /// </summary>
         public EnvelopeParameters Envelope { get; }
+
+        /// <summary>
+        /// Low-pass filter parameters shaping this region's timbre before the amplifier stage.
+        /// </summary>
+        public FilterParameters Filter { get; }
     }
 }

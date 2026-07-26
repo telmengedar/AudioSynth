@@ -385,5 +385,57 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(key1, Is.EqualTo(key2),
                 "The same note must produce the same cacheKey for idempotent caching.");
         }
+
+        [Test]
+        [Description("Absent initial-filter generators yield the open default cutoff (SF2 13500-cent sentinel).")]
+        public void TryResolve_NoFilterGenerators_YieldsOpenCutoff() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Filter.CutoffHz, Is.EqualTo(FilterParameters.Sf2OpenCutoffHz).Within(1e-3f),
+                "Absent InitialFilterCutoffFrequency must map to the open default cutoff.");
+            Assert.That(region.Filter.Resonance, Is.EqualTo(FilterParameters.ButterworthResonance).Within(1e-4f),
+                "Absent InitialFilterQ must map to a flat Butterworth resonance.");
+        }
+
+        [Test]
+        [Description("A low InitialFilterCutoffFrequency generator maps to its absolute-cents frequency in hertz.")]
+        public void TryResolve_LowCutoffGenerator_MapsToHertz() {
+            Sf2Zone zone = InstrumentZone(0, 127,
+                Gen(Sf2GeneratorType.InitialFilterCutoffFrequency, 4500));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            float expectedHz = (float)(8.176 * System.Math.Pow(2.0, 4500.0 / 1200.0));
+            Assert.That(found, Is.True);
+            Assert.That(region!.Filter.CutoffHz, Is.EqualTo(expectedHz).Within(expectedHz * 0.001f),
+                "4500 cents must map to 8.176 * 2^(4500/1200) Hz.");
+            Assert.That(region.Filter.CutoffHz, Is.LessThan(FilterParameters.Sf2OpenCutoffHz),
+                "A 4500-cent cutoff is well below the open sentinel and must not be treated as open.");
+        }
+
+        [Test]
+        [Description("A positive InitialFilterQ generator raises resonance above the flat Butterworth value.")]
+        public void TryResolve_ResonanceGenerator_RaisesResonance() {
+            Sf2Zone zone = InstrumentZone(0, 127,
+                Gen(Sf2GeneratorType.InitialFilterCutoffFrequency, 4500),
+                Gen(Sf2GeneratorType.InitialFilterQ, 120));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Filter.Resonance, Is.GreaterThan(FilterParameters.ButterworthResonance),
+                "120 cB of resonance must raise Q above the flat Butterworth value.");
+        }
     }
 }
