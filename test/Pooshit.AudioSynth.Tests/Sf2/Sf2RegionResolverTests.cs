@@ -315,6 +315,64 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
+        [Description("Absent volume-envelope generators fall back to the SF2 default attack time (≈0.977 ms).")]
+        public void TryResolve_NoVolEnvGens_UsesSf2DefaultTimes() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Envelope.AttackSeconds, Is.EqualTo(EnvelopeParameters.Sf2DefaultTimeSeconds).Within(1e-5f),
+                "absent AttackVolumeEnvelope must map to the SF2 default time.");
+            Assert.That(region.Envelope.SustainLevel, Is.EqualTo(1f),
+                "absent SustainVolumeEnvelope (0 cB) must map to full level.");
+        }
+
+        [Test]
+        [Description("AttackVolumeEnvelope(34)=0 timecents maps to a 1-second attack (2^0).")]
+        public void TryResolve_AttackVolEnvZeroTimecents_MapsToOneSecond() {
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.AttackVolumeEnvelope, 0));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Envelope.AttackSeconds, Is.EqualTo(1f).Within(1e-4f),
+                "0 timecents must map to 2^0 = 1 second.");
+        }
+
+        [Test]
+        [Description("SustainVolumeEnvelope(37)=100 cB attenuation maps to a linear level of ~0.316.")]
+        public void TryResolve_SustainVolEnv100Centibels_MapsToLinearLevel() {
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SustainVolumeEnvelope, 100));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Envelope.SustainLevel, Is.EqualTo(0.316f).Within(0.005f),
+                "100 cB (10 dB) of attenuation must map to 10^(-100/200) ≈ 0.316.");
+        }
+
+        [Test]
+        [Description("Local zone volume-envelope generator overrides the global instrument zone's value.")]
+        public void TryResolve_LocalVolEnvOverridesGlobal() {
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.AttackVolumeEnvelope, 0));
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.AttackVolumeEnvelope, (ushort)(short)1200));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { globalZone, localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Envelope.AttackSeconds, Is.EqualTo(2f).Within(1e-4f),
+                "local AttackVolumeEnvelope=1200 tc (2 s) must override global 0 tc (1 s).");
+        }
+
+        [Test]
         [Description("Resolved cacheKey is consistent across identical note lookups.")]
         public void TryResolve_SameNote_SameCacheKey() {
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(

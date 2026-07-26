@@ -4,14 +4,17 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
 
     /// <summary>
     /// <see cref="IVoice"/> that reads a mono <see cref="SampleRegion"/> at a pitch-derived increment
-    /// with linear interpolation, multiplies each frame by its own <see cref="GainRamp"/>, and renders
-    /// a mono block; supports no-loop one-shot and continuous looping.
+    /// with linear interpolation and renders a mono block.  Each frame is scaled by the product of the
+    /// region's DAHDSR <see cref="AmplitudeEnvelope"/> (the note's amplitude contour, which owns the
+    /// click-free onset and the note-off release fade) and a <see cref="GainRamp"/> (the zipper-free
+    /// slew of the velocity-derived scalar gain).  Supports no-loop one-shot and continuous looping.
     /// </summary>
     public sealed class SamplePlaybackVoice : IVoice {
 
         readonly SampleRegion region;
         readonly float pitchIncrement;
         GainRamp gainRamp;
+        AmplitudeEnvelope envelope;
         double readPos;
         bool isActive;
         bool released;
@@ -29,6 +32,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
             this.pitchIncrement = pitchIncrement;
             gainRamp = new GainRamp(outputSampleRate);
             gainRamp.SetTarget(targetGain);
+            envelope = new AmplitudeEnvelope(region.Envelope, outputSampleRate);
             readPos = region.Start;
             isActive = true;
             released = false;
@@ -41,7 +45,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         /// <inheritdoc/>
         public void Release() {
             released = true;
-            gainRamp.SetTarget(0f);
+            envelope.Release();
         }
 
         /// <inheritdoc/>
@@ -53,7 +57,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
 
             int count = block.Length;
             for (int i = 0; i < count; i++) {
-                float gain = gainRamp.AdvanceFrame();
+                float gain = envelope.AdvanceFrame() * gainRamp.AdvanceFrame();
 
                 float sample;
                 if (sampleExhausted) {
@@ -65,7 +69,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
 
                 block[i] = sample * gain;
 
-                if (released && gain == 0f) {
+                if (released && envelope.IsFinished) {
                     for (int j = i + 1; j < count; j++)
                         block[j] = 0f;
                     isActive = false;

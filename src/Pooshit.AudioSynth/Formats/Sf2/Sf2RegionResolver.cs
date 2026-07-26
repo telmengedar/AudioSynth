@@ -15,6 +15,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
     /// </remarks>
     public sealed class Sf2RegionResolver {
 
+        const int DefaultEnvelopeTimecents = -12000;
+        const float MaxEnvelopeSeconds = 20f;
+        const int MaxSustainAttenuationCentibels = 1440;
+
         readonly Sf2PresetHeader preset;
         readonly Sf2Instrument[] instruments;
         readonly Sf2SampleHeader[] sampleHeaders;
@@ -181,6 +185,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 + GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.FineTune, defaultValue: 0)
                 + GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.CoarseTune, defaultValue: 0) * 100;
 
+            EnvelopeParameters envelope = BuildEnvelopeParameters(zone, globalZone);
+
             return new SampleRegion(
                 floatPool,
                 start,
@@ -190,7 +196,41 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 loopMode,
                 sourceSampleRate,
                 rootKey,
-                pitchCorrectionCents);
+                pitchCorrectionCents,
+                envelope);
+        }
+
+        static EnvelopeParameters BuildEnvelopeParameters(Sf2Zone zone, Sf2Zone? globalZone) {
+            float delay = TimecentsToSeconds(
+                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.DelayVolumeEnvelope, DefaultEnvelopeTimecents));
+            float attack = TimecentsToSeconds(
+                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.AttackVolumeEnvelope, DefaultEnvelopeTimecents));
+            float hold = TimecentsToSeconds(
+                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.HoldVolumeEnvelope, DefaultEnvelopeTimecents));
+            float decay = TimecentsToSeconds(
+                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.DecayVolumeEnvelope, DefaultEnvelopeTimecents));
+            float sustain = CentibelsToLinear(
+                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.SustainVolumeEnvelope, defaultValue: 0));
+            float release = TimecentsToSeconds(
+                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.ReleaseVolumeEnvelope, DefaultEnvelopeTimecents));
+            return new EnvelopeParameters(delay, attack, hold, decay, sustain, release);
+        }
+
+        static float TimecentsToSeconds(int timecents) {
+            double seconds = Math.Pow(2.0, timecents / 1200.0);
+            if (seconds > MaxEnvelopeSeconds)
+                return MaxEnvelopeSeconds;
+            if (seconds < 0d)
+                return 0f;
+            return (float)seconds;
+        }
+
+        static float CentibelsToLinear(int centibels) {
+            if (centibels <= 0)
+                return 1f;
+            if (centibels >= MaxSustainAttenuationCentibels)
+                return 0f;
+            return (float)Math.Pow(10.0, -centibels / 200.0);
         }
 
         static int ResolveRootKey(Sf2Zone zone, Sf2Zone? globalZone, Sf2SampleHeader header) {
