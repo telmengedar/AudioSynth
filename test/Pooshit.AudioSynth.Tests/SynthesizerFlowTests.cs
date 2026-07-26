@@ -13,7 +13,8 @@ namespace Pooshit.AudioSynth.Tests {
             float[] buf = new float[length];
             for (int i = 0; i < length; i++)
                 buf[i] = value;
-            return new SampleRegion(buf, 0, length, 0, length, LoopMode.Continuous, sampleRate, 60, 0);
+            return new SampleRegion(buf, 0, length, 0, length, LoopMode.Continuous, sampleRate, 60, 0,
+                EnvelopeParameters.Default);
         }
 
         [Test]

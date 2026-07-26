@@ -33,14 +33,21 @@ if (patches.Count == 0) {
 }
 
 Synthesizer synthesizer = new Synthesizer(new SynthesizerOptions(format.SampleRate, format.Channels), patches[0]);
-synthesizer.NoteOn(0, midiNote, 100);
 
 long frames = (long)(durationSeconds * format.SampleRate);
-using (WavFileSink sink = new WavFileSink(outputPath, format))
-    OfflineRenderer.Render(synthesizer, sink, frames);
+long holdFrames = frames / 2;
+long releaseFrames = frames - holdFrames;
+
+synthesizer.NoteOn(0, midiNote, 100);
+using (WavFileSink sink = new WavFileSink(outputPath, format)) {
+    OfflineRenderer.Render(synthesizer, sink, holdFrames);
+    synthesizer.NoteOff(0, midiNote);
+    OfflineRenderer.Render(synthesizer, sink, releaseFrames);
+}
 
 Console.WriteLine(
-    $"Rendered {frames} frames ({durationSeconds}s) of note {midiNote} from '{Path.GetFileName(soundfontPath)}' to '{outputPath}'.");
+    $"Rendered {frames} frames ({durationSeconds}s) of note {midiNote} from '{Path.GetFileName(soundfontPath)}' " +
+    $"to '{outputPath}' (held {holdFrames}, released tail {releaseFrames}).");
 return 0;
 
 static string? FindDefaultSoundfont() {
