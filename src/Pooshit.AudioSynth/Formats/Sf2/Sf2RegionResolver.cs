@@ -18,6 +18,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const int DefaultEnvelopeTimecents = -12000;
         const float MaxEnvelopeSeconds = 20f;
         const int MaxSustainAttenuationCentibels = 1440;
+        const int DefaultFilterCutoffCents = 13500;
+        const int MinFilterCutoffCents = 1500;
+        const int MaxFilterResonanceCentibels = 960;
+        const double FilterCutoffReferenceHz = 8.176;
 
         readonly Sf2PresetHeader preset;
         readonly Sf2Instrument[] instruments;
@@ -186,6 +190,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 + GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.CoarseTune, defaultValue: 0) * 100;
 
             EnvelopeParameters envelope = BuildEnvelopeParameters(zone, globalZone);
+            FilterParameters filter = BuildFilterParameters(zone, globalZone);
 
             return new SampleRegion(
                 floatPool,
@@ -197,7 +202,38 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 sourceSampleRate,
                 rootKey,
                 pitchCorrectionCents,
-                envelope);
+                envelope,
+                filter);
+        }
+
+        static FilterParameters BuildFilterParameters(Sf2Zone zone, Sf2Zone? globalZone) {
+            int cutoffCents = GetEffectiveInt16(
+                zone, globalZone, Sf2GeneratorType.InitialFilterCutoffFrequency, DefaultFilterCutoffCents);
+            int resonanceCentibels = GetEffectiveInt16(
+                zone, globalZone, Sf2GeneratorType.InitialFilterQ, defaultValue: 0);
+
+            float cutoffHz = FilterCutoffCentsToHz(cutoffCents);
+            float resonance = FilterCentibelsToResonance(resonanceCentibels);
+            return new FilterParameters(cutoffHz, resonance);
+        }
+
+        static float FilterCutoffCentsToHz(int cents) {
+            if (cents >= DefaultFilterCutoffCents)
+                return FilterParameters.Sf2OpenCutoffHz;
+            if (cents < MinFilterCutoffCents)
+                cents = MinFilterCutoffCents;
+            double hz = FilterCutoffReferenceHz * Math.Pow(2.0, cents / 1200.0);
+            return (float)hz;
+        }
+
+        static float FilterCentibelsToResonance(int centibels) {
+            if (centibels <= 0)
+                return FilterParameters.ButterworthResonance;
+            if (centibels > MaxFilterResonanceCentibels)
+                centibels = MaxFilterResonanceCentibels;
+            double resonanceDb = centibels / 10.0;
+            double q = Math.Pow(10.0, resonanceDb / 20.0) * FilterParameters.ButterworthResonance;
+            return (float)q;
         }
 
         static EnvelopeParameters BuildEnvelopeParameters(Sf2Zone zone, Sf2Zone? globalZone) {

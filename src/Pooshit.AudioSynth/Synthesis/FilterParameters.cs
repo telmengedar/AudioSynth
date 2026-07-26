@@ -1,0 +1,55 @@
+using System;
+
+namespace Pooshit.AudioSynth.Synthesis {
+
+    /// <summary>
+    /// Immutable, rate-independent description of a resonant low-pass filter: the cutoff frequency in
+    /// hertz and the resonance as a linear quality factor (Q).  SF2 cent and centibel units are
+    /// converted away before an instance is built, so this type carries no SoundFont-specific knowledge.
+    /// A cutoff at or above <see cref="Sf2OpenCutoffHz"/> denotes an open filter, which a
+    /// <see cref="BiquadLowPassFilter"/> realises as an exact passthrough.
+    /// </summary>
+    public readonly struct FilterParameters {
+
+        /// <summary>
+        /// Creates a <see cref="FilterParameters"/>.
+        /// </summary>
+        /// <param name="cutoffHz">low-pass corner frequency in hertz; at or above <see cref="Sf2OpenCutoffHz"/> the filter is open</param>
+        /// <param name="resonance">resonance as a linear quality factor (Q); 0.707 is a flat Butterworth response with no peak</param>
+        public FilterParameters(float cutoffHz, float resonance) {
+            CutoffHz = cutoffHz;
+            Resonance = resonance;
+        }
+
+        /// <summary>
+        /// Low-pass corner frequency in hertz.  At or above <see cref="Sf2OpenCutoffHz"/> the filter is open.
+        /// </summary>
+        public float CutoffHz { get; }
+
+        /// <summary>
+        /// Resonance as a linear quality factor (Q); 0.707 is a flat Butterworth response with no resonant peak.
+        /// </summary>
+        public float Resonance { get; }
+
+        /// <summary>
+        /// The SF2-specification default filter: an open cutoff (13500 absolute cents ≈ 19913 Hz) with no
+        /// resonance.  Realised as an exact passthrough, so hand-built patches and any region whose SF2
+        /// initial-filter generators are absent are unaffected by filtering.
+        /// </summary>
+        public static FilterParameters Default =>
+            new FilterParameters(Sf2OpenCutoffHz, ButterworthResonance);
+
+        /// <summary>
+        /// Cutoff frequency in hertz corresponding to the SF2 default initial-filter cutoff of 13500
+        /// absolute cents (8.176 · 2^(13500/1200) ≈ 19913 Hz).  A requested cutoff at or above this value
+        /// denotes an open filter and is realised as a passthrough at any sample rate.
+        /// </summary>
+        public static readonly float Sf2OpenCutoffHz = (float)(8.176 * Math.Pow(2.0, 13500.0 / 1200.0));
+
+        /// <summary>
+        /// The resonance (Q = 1/√2 ≈ 0.707) of a flat Butterworth low-pass with no resonant peak, matching
+        /// the SF2 default initial-filter Q of 0 centibels.
+        /// </summary>
+        public const float ButterworthResonance = 0.70710678f;
+    }
+}
