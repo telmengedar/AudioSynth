@@ -12,8 +12,8 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// configured and output is stereo; absent, it leaves the master path bit-for-bit unchanged), a
     /// master soft-clip stage, then a single NaN/Inf-safe finalize choke point (INV-2). The reverb is
     /// routed as a send-return: by default (<see cref="SynthesizerOptions.GlobalReverb"/> = <c>false</c>)
-    /// each voice also adds into a per-channel-weighted stereo send bus (<c>channelReverbSend[ch] ×
-    /// voice.ReverbSend</c>, honouring CC91 and SF2 gen-16), and the reverb reads that bus; when
+    /// each voice also adds into a per-channel-weighted stereo send bus (<c>clamp01(channelReverbSend[ch] +
+    /// voice.ReverbSend)</c>, honouring CC91 and SF2 gen-16 additively), and the reverb reads that bus; when
     /// <see cref="SynthesizerOptions.GlobalReverb"/> is <c>true</c> the reverb reads the master directly
     /// (every voice sends fully), reproducing the pre-send-bus uniform master-insert bit-for-bit. Holds a
     /// per-channel pitch-bend factor that fans out to the channel's sounding voices and is inherited by
@@ -79,8 +79,6 @@ namespace Pooshit.AudioSynth.Synthesis {
                 channelBendFactor[i] = 1f;
             channelPan = new float[ChannelCount];
             channelReverbSend = new float[ChannelCount];
-            for (int i = 0; i < channelReverbSend.Length; i++)
-                channelReverbSend[i] = 1f;
             pool = new VoiceSlot[options.MaxVoices];
             scratch = new float[options.BlockFrames];
             master = new float[options.BlockFrames * options.Channels];
@@ -218,7 +216,7 @@ namespace Pooshit.AudioSynth.Synthesis {
                         }
 
                         if (perChannelReverb) {
-                            float sendWeight = channelReverbSend[slot.Channel] * slot.Voice.ReverbSend;
+                            float sendWeight = Clamp(channelReverbSend[slot.Channel] + slot.Voice.ReverbSend, 0f, 1f);
                             if (sendWeight != 0f) {
                                 for (int frame = 0; frame < frames; frame++) {
                                     float pre = scratchSlice[frame] * channelGainBlock[channelBase + frame] * sendWeight;

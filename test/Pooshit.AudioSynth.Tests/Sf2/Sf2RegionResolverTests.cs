@@ -713,10 +713,10 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
-        [Description("Absent ReverbEffectsSend(16) generator defaults to 1.0 (neutral pass-through, DiVoid #7170 §9.3), " +
-                     "NOT SF2's literal generator default of 0, so channel CC91 is never impotent for a region " +
-                     "that omits gen-16.")]
-        public void TryResolve_NoReverbSendGenerator_DefaultsToOne() {
+        [Description("Absent ReverbEffectsSend(16) generator defaults to the SF2 spec's literal 0 (DiVoid #7170 " +
+                     "§9.3 revised): with the additive/clamped combination, an absent gen-16 contributes no " +
+                     "bias, so the channel's CC91 send alone still drives the voice.")]
+        public void TryResolve_NoReverbSendGenerator_DefaultsToZero() {
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
                 PresetZoneWithInstrument(),
                 new[] { InstrumentZone(0, 127) });
@@ -724,8 +724,8 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.ReverbSend, Is.EqualTo(1f),
-                "Absent ReverbEffectsSend(16) generator must default to 1.0 (neutral), not SF2's literal 0.");
+            Assert.That(region!.ReverbSend, Is.EqualTo(0f),
+                "Absent ReverbEffectsSend(16) generator must default to the SF2 spec's literal 0.");
         }
 
         [Test]

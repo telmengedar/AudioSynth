@@ -29,7 +29,6 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const int MaxLfoFilterDepthCents = 12000;
         const int MaxPanUnits = 500;
         const float PanUnitsDivisor = 500f;
-        const int NeutralReverbSendUnits = 1000;
         const int MaxReverbSendUnits = 1000;
         const float ReverbSendUnitsDivisor = 1000f;
 
@@ -236,13 +235,13 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Reads generator 16 (reverbEffectsSend) in 0.1%-units (0..1000 → 0..1); absent defaults to
-        /// <see cref="NeutralReverbSendUnits"/> (1000 → 1.0), a neutral pass-through rather than SF2's
-        /// literal generator default of 0, mirroring <see cref="BuildPan"/>'s neutral-absent-value
-        /// approach so CC91 is never impotent for a region that omits the generator (design §9.3).
+        /// Reads generator 16 (reverbEffectsSend) in 0.1%-units (0..1000 → 0..1); absent defaults to the
+        /// SF2 spec's literal generator default of 0 — an absent gen-16 contributes no additive bias, so
+        /// the channel's CC91 send still drives the voice on its own (combination is additive/clamped,
+        /// design §9.3 revised).
         /// </summary>
         static float BuildReverbSend(Sf2Zone zone, Sf2Zone? globalZone) {
-            int raw = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.ReverbEffectsSend, defaultValue: NeutralReverbSendUnits);
+            int raw = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.ReverbEffectsSend, defaultValue: 0);
             if (raw > MaxReverbSendUnits)
                 raw = MaxReverbSendUnits;
             if (raw < 0)

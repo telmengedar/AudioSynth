@@ -8,11 +8,12 @@ using Pooshit.AudioSynth.Synthesis.Patches;
 namespace Pooshit.AudioSynth.Tests {
 
     /// <summary>
-    /// Deliverable-proof tests for per-channel reverb send routing (DiVoid #7165, design #7170 §14.10):
-    /// asset-free, synth-level proof that a channel's <see cref="ISynthesizer.SetChannelReverbSend"/>
-    /// weight independently gates whether that channel's voices reach the reverb, that an all-zero send
-    /// bus reproduces the reverb-absent render bit-for-bit, and that <see cref="SynthesizerOptions.GlobalReverb"/>
-    /// reproduces the pre-send-bus uniform master-insert bit-for-bit.
+    /// Deliverable-proof tests for per-channel reverb send routing (DiVoid #7165, design #7170 §9.3/§14.10
+    /// revised): asset-free, synth-level proof that the channel send (CC91) and the region send (gen-16)
+    /// combine additively and clamp at 1.0 — neither alone being zero silences the other's contribution,
+    /// only both together do — that an all-zero send bus reproduces the reverb-absent render bit-for-bit,
+    /// and that <see cref="SynthesizerOptions.GlobalReverb"/> reproduces the pre-send-bus uniform
+    /// master-insert bit-for-bit.
     /// </summary>
     [TestFixture]
     public class ReverbSendRoutingTests {
@@ -30,26 +31,50 @@ namespace Pooshit.AudioSynth.Tests {
 
         const int TailFrames = 8000;
 
-        static SampleRegion BuildOneShotDcRegion(float value, int length) {
+        static SampleRegion BuildOneShotDcRegion(float value, int length, float reverbSend = 0f) {
             float[] buf = new float[length];
             for (int i = 0; i < length; i++)
                 buf[i] = value;
             return new SampleRegion(buf, 0, length, 0, length, LoopMode.NoLoop, SampleRate, 60, 0,
-                EnvelopeParameters.Default, FilterParameters.Default, LfoParameters.Default, 0f);
+                EnvelopeParameters.Default, FilterParameters.Default, LfoParameters.Default, 0f, reverbSend);
         }
 
-        static SampleRegion BuildSustainedDcRegion(float value, int length) {
+        static SampleRegion BuildSustainedDcRegion(float value, int length, float reverbSend = 0f) {
             float[] buf = new float[length];
             for (int i = 0; i < length; i++)
                 buf[i] = value;
             return new SampleRegion(buf, 0, length, 0, length, LoopMode.Continuous, SampleRate, 60, 0,
-                EnvelopeParameters.Default, FilterParameters.Default, LfoParameters.Default, 0f);
+                EnvelopeParameters.Default, FilterParameters.Default, LfoParameters.Default, 0f, reverbSend);
         }
 
+        /// <summary>
+        /// Renders a one-shot note with gen-16 (region <see cref="SampleRegion.ReverbSend"/>) held at 0, so
+        /// the reverb tail is driven by <paramref name="channelSend"/> (CC91) alone — isolating the channel
+        /// send's contribution to the additive/clamped combination (design #7170 §9.3 revised).
+        /// </summary>
         static float[] RenderOneShotWithChannelSend(float channelSend) {
             SynthesizerOptions options = new SynthesizerOptions(
                 SampleRate, 2, 64, 4, new ReverbSettings(roomSize: 0.9f, damping: 0.3f, wet: 1f, width: 1f));
             SampleRegion region = BuildOneShotDcRegion(0.5f, NoteFrames);
+            SamplePatch patch = new SamplePatch(region, options.SampleRate);
+            Synthesizer synth = new Synthesizer(options, patch);
+            InMemoryAudioSink sink = new InMemoryAudioSink(synth.Format);
+
+            synth.SetChannelReverbSend(0, channelSend);
+            synth.NoteOn(0, 60, 127);
+            OfflineRenderer.Render(synth, sink, NoteFrames + TailFrames);
+            return sink.ToArray();
+        }
+
+        /// <summary>
+        /// Renders a one-shot note with independently-chosen channel send (CC91) and region send (gen-16),
+        /// so the additive/clamped combination <c>clamp01(channelSend + regionSend)</c> can be probed
+        /// directly (design #7170 §9.3 revised).
+        /// </summary>
+        static float[] RenderOneShotWithSends(float channelSend, float regionSend) {
+            SynthesizerOptions options = new SynthesizerOptions(
+                SampleRate, 2, 64, 4, new ReverbSettings(roomSize: 0.9f, damping: 0.3f, wet: 1f, width: 1f));
+            SampleRegion region = BuildOneShotDcRegion(0.5f, NoteFrames, regionSend);
             SamplePatch patch = new SamplePatch(region, options.SampleRate);
             Synthesizer synth = new Synthesizer(options, patch);
             InMemoryAudioSink sink = new InMemoryAudioSink(synth.Format);
@@ -90,20 +115,70 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
-        [Description("All channel sends at 0, per-channel mode (the default), must render bit-identically to " +
-                     "reverb being entirely absent: the send bus contributes nothing, so the master path is " +
-                     "untouched (regression, design §14.10).")]
-        public void AllChannelSendsZero_PerChannelMode_RendersBitIdenticalToReverbAbsent() {
+        [Description("Additive-combination core (design §9.3/§14.10 revised) — this is exactly the regression " +
+                     "the multiplicative first cut failed: a channel with CC91>0 and a region with gen-16=0 " +
+                     "(the Florestan case — every probed region sets an explicit 0) must still reach the " +
+                     "reverb, because the channel's send is not multiplied away by the region's absent bias.")]
+        public void AdditiveCombination_ChannelSendWithZeroRegionSend_StillReachesReverb() {
+            float[] samples = RenderOneShotWithSends(channelSend: 0.6f, regionSend: 0f);
+            float tailRms = TailRms(samples, channels: 2, TailFrames);
+
+            TestContext.WriteLine($"Tail RMS (CC91=0.6, gen-16=0): {tailRms:F6}.");
+            Assert.That(tailRms, Is.GreaterThan(0f),
+                "CC91>0 with gen-16=0 (the Florestan case) must still carry an audible reverb tail.");
+        }
+
+        [Test]
+        [Description("A channel with CC91=0 and a region with gen-16>0 must still reach the reverb — the " +
+                     "channel's zero send must not zero out the region's own additive per-instrument bias.")]
+        public void AdditiveCombination_RegionSendWithZeroChannelSend_StillReachesReverb() {
+            float[] samples = RenderOneShotWithSends(channelSend: 0f, regionSend: 0.6f);
+            float tailRms = TailRms(samples, channels: 2, TailFrames);
+
+            TestContext.WriteLine($"Tail RMS (CC91=0, gen-16=0.6): {tailRms:F6}.");
+            Assert.That(tailRms, Is.GreaterThan(0f),
+                "gen-16>0 with CC91=0 must still carry an audible reverb tail.");
+        }
+
+        [Test]
+        [Description("Only when BOTH the channel send (CC91) and the region send (gen-16) are exactly 0 does " +
+                     "the additive combination clamp01(0+0)=0 leave the voice fully dry.")]
+        public void AdditiveCombination_BothSendsZero_IsDry() {
+            float[] samples = RenderOneShotWithSends(channelSend: 0f, regionSend: 0f);
+            float tailRms = TailRms(samples, channels: 2, TailFrames);
+
+            Assert.That(tailRms, Is.EqualTo(0f),
+                "both channel send and region send at 0 must decay to exact silence.");
+        }
+
+        [Test]
+        [Description("CC91 near-full plus a non-zero gen-16 must clamp the combined send at 1.0 rather than " +
+                     "overdriving past it: a (0.9, 0.5) pair (raw sum 1.4) must render bit-identically to an " +
+                     "already-saturated (1.0, 0.0) pair, proving the clamp actually bounds the sum.")]
+        public void AdditiveCombination_SendsSummingAboveOne_ClampAtOne() {
+            float[] overOne = RenderOneShotWithSends(channelSend: 0.9f, regionSend: 0.5f);
+            float[] saturated = RenderOneShotWithSends(channelSend: 1f, regionSend: 0f);
+
+            Assert.That(overOne, Is.EqualTo(saturated),
+                "a combined send summing above 1.0 must clamp identically to an already-saturated full send.");
+        }
+
+        [Test]
+        [Description("Every channel send (CC91) AND every region send (gen-16) truly at 0, per-channel mode " +
+                     "(the default), must render bit-identically to reverb being entirely absent: the additive " +
+                     "combination clamp01(0+0)=0, so the send bus contributes nothing and the master path is " +
+                     "untouched (regression, design §14.10 revised).")]
+        public void AllChannelAndRegionSendsZero_PerChannelMode_RendersBitIdenticalToReverbAbsent() {
             SynthesizerOptions dryOptions = new SynthesizerOptions(SampleRate, 2, 64, 8, reverb: null);
             SynthesizerOptions wetOptions = new SynthesizerOptions(SampleRate, 2, 64, 8, reverb: ReverbSettings.Default);
 
-            SampleRegion dryRegion = BuildSustainedDcRegion(0.3f, 4096);
+            SampleRegion dryRegion = BuildSustainedDcRegion(0.3f, 4096, reverbSend: 0f);
             Synthesizer dry = new Synthesizer(dryOptions, new SamplePatch(dryRegion, dryOptions.SampleRate));
             InMemoryAudioSink drySink = new InMemoryAudioSink(dry.Format);
             dry.NoteOn(0, 60, 100);
             OfflineRenderer.Render(dry, drySink, 4096);
 
-            SampleRegion wetRegion = BuildSustainedDcRegion(0.3f, 4096);
+            SampleRegion wetRegion = BuildSustainedDcRegion(0.3f, 4096, reverbSend: 0f);
             Synthesizer wet = new Synthesizer(wetOptions, new SamplePatch(wetRegion, wetOptions.SampleRate));
             InMemoryAudioSink wetSink = new InMemoryAudioSink(wet.Format);
             wet.SetChannelReverbSend(0, 0f);
@@ -111,26 +186,27 @@ namespace Pooshit.AudioSynth.Tests {
             OfflineRenderer.Render(wet, wetSink, 4096);
 
             Assert.That(wetSink.ToArray(), Is.EqualTo(drySink.ToArray()),
-                "an all-zero per-channel send bus must reproduce the reverb-absent render bit-for-bit.");
+                "an all-zero channel send AND all-zero region send must reproduce the reverb-absent render bit-for-bit.");
         }
 
         [Test]
-        [Description("GlobalReverb=true must render bit-identically to the per-channel default (channel send=1.0, " +
-                     "region ReverbSend=1.0), proving the master insert is exactly the special case where every " +
-                     "voice sends fully (design §4/§14.10).")]
+        [Description("GlobalReverb=true must render bit-identically to the per-channel mode with every channel " +
+                     "send forced to 1.0 (region gen-16=0), proving the master insert is exactly the special " +
+                     "case where every voice sends fully (design §4/§14.10 revised).")]
         public void GlobalReverbTrue_ReproducesPerChannelAllSendsOne_BitIdentically() {
             SynthesizerOptions perChannelOptions = new SynthesizerOptions(
                 SampleRate, 2, 64, 8, reverb: ReverbSettings.Default, globalReverb: false);
             SynthesizerOptions globalOptions = new SynthesizerOptions(
                 SampleRate, 2, 64, 8, reverb: ReverbSettings.Default, globalReverb: true);
 
-            SampleRegion perChannelRegion = BuildSustainedDcRegion(0.3f, 4096);
+            SampleRegion perChannelRegion = BuildSustainedDcRegion(0.3f, 4096, reverbSend: 0f);
             Synthesizer perChannel = new Synthesizer(perChannelOptions, new SamplePatch(perChannelRegion, perChannelOptions.SampleRate));
             InMemoryAudioSink perChannelSink = new InMemoryAudioSink(perChannel.Format);
+            perChannel.SetChannelReverbSend(0, 1f);
             perChannel.NoteOn(0, 60, 100);
             OfflineRenderer.Render(perChannel, perChannelSink, 4096);
 
-            SampleRegion globalRegion = BuildSustainedDcRegion(0.3f, 4096);
+            SampleRegion globalRegion = BuildSustainedDcRegion(0.3f, 4096, reverbSend: 0f);
             Synthesizer global = new Synthesizer(globalOptions, new SamplePatch(globalRegion, globalOptions.SampleRate));
             InMemoryAudioSink globalSink = new InMemoryAudioSink(global.Format);
             global.NoteOn(0, 60, 100);
