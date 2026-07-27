@@ -16,5 +16,10 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// Releases a sounding note into its envelope tail.
         /// </summary>
         void NoteOff(int channel, int key);
+
+        /// <summary>
+        /// Sets the current patch for a channel; only future <see cref="NoteOn"/> calls on it are affected.
+        /// </summary>
+        void SetChannelPatch(int channel, IPatch patch);
     }
 }

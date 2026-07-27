@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using Pooshit.AudioSynth.Audio;
@@ -29,16 +28,16 @@ float filterSweepDepthCents = args.Length > 7 ? float.Parse(args[7], CultureInfo
 AudioFormat format = new AudioFormat(SynthesizerOptions.DefaultSampleRate, SynthesizerOptions.DefaultChannels);
 
 ISoundBankLoader loader = new Sf2SoundBankLoader(format.SampleRate);
-IReadOnlyList<IPatch> patches;
+SoundBank bank;
 using (FileStream soundfontStream = File.OpenRead(soundfontPath))
-    patches = loader.Load(soundfontStream);
+    bank = loader.Load(soundfontStream);
 
-if (patches.Count == 0) {
+if (bank.Count == 0) {
     Console.Error.WriteLine($"SoundFont '{soundfontPath}' contains no presets.");
     return 1;
 }
 
-IPatch patch = patches[0];
+IPatch patch = bank.GetPatch(0, 0);
 bool lfoOverrideRequested = vibratoDepthCents != 0f || tremoloDepthCentibels != 0f || filterSweepDepthCents != 0f;
 if (lfoOverrideRequested && patch is Sf2Patch sf2Patch)
     patch = new ModLfoOverridePatch(

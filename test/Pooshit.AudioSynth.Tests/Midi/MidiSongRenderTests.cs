@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using Pooshit.AudioSynth.Audio;
@@ -62,10 +61,10 @@ namespace Pooshit.AudioSynth.Tests {
 
             AudioFormat format = new AudioFormat(SynthesizerOptions.DefaultSampleRate, SynthesizerOptions.DefaultChannels);
 
-            IReadOnlyList<IPatch> patches;
+            SoundBank bank;
             using (FileStream sf2Stream = File.OpenRead(soundfontPath))
-                patches = new Sf2SoundBankLoader(format.SampleRate).Load(sf2Stream);
-            Assert.That(patches.Count, Is.GreaterThan(0), "Florestan must contain at least one preset.");
+                bank = new Sf2SoundBankLoader(format.SampleRate).Load(sf2Stream);
+            Assert.That(bank.Count, Is.GreaterThan(0), "Florestan must contain at least one preset.");
 
             MidiFile midiFile;
             using (FileStream songStream = File.OpenRead(songPath))
@@ -77,10 +76,10 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(expectedDurationSeconds, Is.GreaterThan(0), "The real song must have non-zero duration.");
 
             SynthesizerOptions options = new SynthesizerOptions(format.SampleRate, format.Channels, SynthesizerOptions.DefaultBlockFrames, MaxVoices);
-            Synthesizer synthesizer = new Synthesizer(options, patches[0]);
+            Synthesizer synthesizer = new Synthesizer(options, bank.GetPatch(0, 0));
             InMemoryAudioSink sink = new InMemoryAudioSink(format);
 
-            long frames = MidiSequencer.Render(sequence, synthesizer, sink);
+            long frames = MidiSequencer.Render(sequence, synthesizer, sink, bank);
 
             Assert.That(frames, Is.GreaterThan(0), "The render must produce at least one frame.");
             long expectedMinimumFrames = (long)(expectedDurationSeconds * format.SampleRate);

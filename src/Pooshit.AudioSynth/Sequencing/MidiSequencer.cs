@@ -6,8 +6,8 @@ using Pooshit.AudioSynth.Synthesis;
 namespace Pooshit.AudioSynth.Sequencing {
 
     /// <summary>
-    /// Drives an <see cref="ISynthesizer"/> from a <see cref="TimedMessageSequence"/> onto a single
-    /// default patch; non-note messages are accepted but ignored (multi-timbral is DiVoid #7098 PR 11).
+    /// Drives an <see cref="ISynthesizer"/> from a <see cref="TimedMessageSequence"/>, owning all GM/MIDI
+    /// routing semantics: per-channel <c>ProgramChange</c> and channel 9 = percussion (DiVoid #7117).
     /// </summary>
     public static class MidiSequencer {
 
@@ -16,6 +16,12 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// audibly; not a configurable knob (DiVoid #7098 §8).
         /// </summary>
         public const float ReleaseTailSeconds = 3.0f;
+
+        const int ChannelCount = 16;
+        const int PercussionChannel = 9;
+        const int MelodicBank = 0;
+        const int PercussionBank = 128;
+        const int DefaultProgram = 0;
 
         /// <summary>
         /// Builds the ordered sample-offset schedule for <paramref name="sequence"/>; pure, no audio
@@ -41,17 +47,24 @@ namespace Pooshit.AudioSynth.Sequencing {
 
         /// <summary>
         /// Renders <paramref name="sequence"/> through <paramref name="synthesizer"/> into
-        /// <paramref name="sink"/>, then renders the fixed release tail.
+        /// <paramref name="sink"/>, GM-resetting all 16 channels from <paramref name="soundBank"/>
+        /// first, then renders the fixed release tail.
         /// </summary>
         /// <param name="sequence">the timed message sequence to render</param>
-        /// <param name="synthesizer">the engine driving the current single default patch</param>
+        /// <param name="synthesizer">the engine driving per-channel patches</param>
         /// <param name="sink">the destination for rendered audio</param>
+        /// <param name="soundBank">the (bank, program) patch lookup used for GM routing</param>
         /// <returns>the total number of frames written, including the release tail</returns>
-        public static long Render(TimedMessageSequence sequence, ISynthesizer synthesizer, IAudioSink sink) {
+        public static long Render(TimedMessageSequence sequence, ISynthesizer synthesizer, IAudioSink sink, SoundBank soundBank) {
             if (synthesizer is null)
                 throw new ArgumentNullException(nameof(synthesizer));
             if (sink is null)
                 throw new ArgumentNullException(nameof(sink));
+            if (soundBank is null)
+                throw new ArgumentNullException(nameof(soundBank));
+
+            for (int channel = 0; channel < ChannelCount; channel++)
+                synthesizer.SetChannelPatch(channel, ResolveProgramPatch(soundBank, channel, DefaultProgram));
 
             ScheduledMidiEvent[] schedule = BuildSchedule(sequence, synthesizer.Format.SampleRate);
             long cursor = 0;
@@ -60,7 +73,7 @@ namespace Pooshit.AudioSynth.Sequencing {
                 long gap = scheduled.SampleOffset - cursor;
                 if (gap > 0)
                     cursor += OfflineRenderer.Render(synthesizer, sink, gap);
-                ApplyNoteMessage(scheduled.Message, synthesizer);
+                ApplyMessage(scheduled.Message, synthesizer, soundBank);
             }
 
             long tailFrames = (long)Math.Round(ReleaseTailSeconds * synthesizer.Format.SampleRate, MidpointRounding.AwayFromZero);
@@ -74,7 +87,7 @@ namespace Pooshit.AudioSynth.Sequencing {
             return message;
         }
 
-        static void ApplyNoteMessage(IMidiMessage message, ISynthesizer synthesizer) {
+        static void ApplyMessage(IMidiMessage message, ISynthesizer synthesizer, SoundBank soundBank) {
             if (!(message is ChannelMessage channel))
                 return;
 
@@ -85,7 +98,15 @@ namespace Pooshit.AudioSynth.Sequencing {
                 case ChannelCommandType.NoteOff:
                     synthesizer.NoteOff(channel.MidiChannel, channel.Data1);
                     break;
+                case ChannelCommandType.ProgramChange:
+                    synthesizer.SetChannelPatch(channel.MidiChannel, ResolveProgramPatch(soundBank, channel.MidiChannel, channel.Data1));
+                    break;
             }
+        }
+
+        static IPatch ResolveProgramPatch(SoundBank soundBank, int channel, int program) {
+            int bank = channel == PercussionChannel ? PercussionBank : MelodicBank;
+            return soundBank.GetPatch(bank, program);
         }
     }
 }

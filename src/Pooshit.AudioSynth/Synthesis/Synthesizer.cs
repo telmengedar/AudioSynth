@@ -11,23 +11,28 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// </summary>
     public sealed class Synthesizer : ISynthesizer {
 
+        const int ChannelCount = 16;
+
         readonly SynthesizerOptions options;
-        readonly IPatch defaultPatch;
+        readonly IPatch[] channelPatch;
         readonly VoiceSlot[] pool;
         readonly float[] scratch;
         readonly float[] master;
         readonly float panGain;
 
         /// <summary>
-        /// Creates a <see cref="Synthesizer"/> with the given options and a single default patch
-        /// used for every note on every channel.
+        /// Creates a <see cref="Synthesizer"/> with the given options; <paramref name="defaultPatch"/>
+        /// fills all 16 channels until a <see cref="SetChannelPatch"/> call overrides one.
         /// </summary>
         /// <param name="options">immutable engine configuration</param>
-        /// <param name="defaultPatch">patch used to start voices for all note-on events</param>
+        /// <param name="defaultPatch">initial patch for every channel</param>
         public Synthesizer(SynthesizerOptions options, IPatch defaultPatch) {
             this.options = options ?? throw new ArgumentNullException(nameof(options));
-            this.defaultPatch = defaultPatch ?? throw new ArgumentNullException(nameof(defaultPatch));
+            if (defaultPatch is null) throw new ArgumentNullException(nameof(defaultPatch));
             Format = new AudioFormat(options.SampleRate, options.Channels);
+            channelPatch = new IPatch[ChannelCount];
+            for (int i = 0; i < channelPatch.Length; i++)
+                channelPatch[i] = defaultPatch;
             pool = new VoiceSlot[options.MaxVoices];
             scratch = new float[options.BlockFrames];
             master = new float[options.BlockFrames * options.Channels];
@@ -38,12 +43,23 @@ namespace Pooshit.AudioSynth.Synthesis {
         public AudioFormat Format { get; }
 
         /// <inheritdoc/>
+        public void SetChannelPatch(int channel, IPatch patch) {
+            if (channel < 0 || channel >= ChannelCount)
+                throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
+            if (patch is null) throw new ArgumentNullException(nameof(patch));
+            channelPatch[channel] = patch;
+        }
+
+        /// <inheritdoc/>
         public void NoteOn(int channel, int key, int velocity) {
+            if (channel < 0 || channel >= ChannelCount)
+                throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
+
             int freeSlot = FindFreeSlot();
             if (freeSlot < 0)
                 return;
 
-            IVoice voice = defaultPatch.StartVoice(key, velocity);
+            IVoice voice = channelPatch[channel].StartVoice(key, velocity);
             ref VoiceSlot slot = ref pool[freeSlot];
             slot.IsOccupied = true;
             slot.Channel = channel;

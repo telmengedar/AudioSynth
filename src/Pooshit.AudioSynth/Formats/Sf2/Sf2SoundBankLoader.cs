@@ -38,7 +38,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         public string FormatId => "sf2";
 
         /// <inheritdoc/>
-        public IReadOnlyList<IPatch> Load(Stream source) {
+        public SoundBank Load(Stream source) {
             if (source is null) throw new ArgumentNullException(nameof(source));
 
             if (source.CanSeek)
@@ -51,7 +51,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             }
         }
 
-        static IReadOnlyList<IPatch> ParseSeekable(Stream source, int rate) {
+        static SoundBank ParseSeekable(Stream source, int rate) {
             using (BinaryReader reader = new BinaryReader(source, Encoding.ASCII, leaveOpen: true)) {
                 try {
                     return ParseSoundFont(reader, rate);
@@ -64,7 +64,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             }
         }
 
-        static IReadOnlyList<IPatch> ParseSoundFont(BinaryReader reader, int rate) {
+        static SoundBank ParseSoundFont(BinaryReader reader, int rate) {
             string riffTag = ReadTag(reader);
             if (riffTag != "RIFF")
                 throw new InvalidSoundFontException(
@@ -473,17 +473,19 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             return zones;
         }
 
-        static IReadOnlyList<IPatch> BuildPatches(
+        static SoundBank BuildPatches(
             Sf2PresetHeader[] presets,
             Sf2Instrument[] instruments,
             Sf2SampleHeader[] sampleHeaders,
             Sf2SampleData sampleData,
             int rate) {
 
-            List<IPatch> patches = new List<IPatch>(presets.Length);
-            foreach (Sf2PresetHeader preset in presets)
-                patches.Add(new Sf2Patch(preset, instruments, sampleHeaders, sampleData, rate));
-            return patches.AsReadOnly();
+            List<(int Bank, int Program, IPatch Patch)> entries = new List<(int, int, IPatch)>(presets.Length);
+            foreach (Sf2PresetHeader preset in presets) {
+                Sf2Patch patch = new Sf2Patch(preset, instruments, sampleHeaders, sampleData, rate);
+                entries.Add((preset.BankNumber, preset.PatchNumber, patch));
+            }
+            return new SoundBank(entries);
         }
 
         private static int ValidateChunkCount(int size, int recordSize, int minCount, string chunkName) {

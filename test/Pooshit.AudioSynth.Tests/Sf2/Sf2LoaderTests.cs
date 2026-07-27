@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.IO;
 using Pooshit.AudioSynth.Formats.Sf2;
 using Pooshit.AudioSynth.Synthesis;
@@ -22,8 +21,8 @@ namespace Pooshit.AudioSynth.Tests {
         public void SampleData_24bit_MaxPositive_DecodesPositive() {
             byte[] sf2 = Sf2TestBuilder.BuildWith24BitSample(smplWord: 0x7FFF, sm24Byte: 0xFF);
 
-            IReadOnlyList<IPatch> patches = Loader.Load(new MemoryStream(sf2));
-            Sf2Patch patch = (Sf2Patch)patches[0];
+            SoundBank bank = Loader.Load(new MemoryStream(sf2));
+            Sf2Patch patch = (Sf2Patch)bank.Patches[0];
 
             int decoded = patch.SampleData.GetSample(0);
 
@@ -41,8 +40,8 @@ namespace Pooshit.AudioSynth.Tests {
                 smplWord: unchecked((short)0x8000),
                 sm24Byte: 0x00);
 
-            IReadOnlyList<IPatch> patches = Loader.Load(new MemoryStream(sf2));
-            Sf2Patch patch = (Sf2Patch)patches[0];
+            SoundBank bank = Loader.Load(new MemoryStream(sf2));
+            Sf2Patch patch = (Sf2Patch)bank.Patches[0];
 
             int decoded = patch.SampleData.GetSample(0);
 
@@ -66,8 +65,8 @@ namespace Pooshit.AudioSynth.Tests {
         public void SampleData_24bit_BitsPerSampleIs24() {
             byte[] sf2 = Sf2TestBuilder.BuildWith24BitSample(smplWord: 0x0100, sm24Byte: 0x00);
 
-            IReadOnlyList<IPatch> patches = Loader.Load(new MemoryStream(sf2));
-            Sf2Patch patch = (Sf2Patch)patches[0];
+            SoundBank bank = Loader.Load(new MemoryStream(sf2));
+            Sf2Patch patch = (Sf2Patch)bank.Patches[0];
 
             Assert.That(patch.SampleData.BitsPerSample, Is.EqualTo(24));
         }
@@ -136,9 +135,9 @@ namespace Pooshit.AudioSynth.Tests {
         public void Loader_EmptySoundFont_LoadsSuccessfullyAndReturnsNoPatch() {
             byte[] sf2 = Sf2TestBuilder.BuildEmpty();
 
-            IReadOnlyList<IPatch> patches = Loader.Load(new MemoryStream(sf2));
+            SoundBank bank = Loader.Load(new MemoryStream(sf2));
 
-            Assert.That(patches, Is.Empty,
+            Assert.That(bank.Patches, Is.Empty,
                 "A SoundFont with no presets must return an empty patch list.");
         }
 
@@ -147,11 +146,11 @@ namespace Pooshit.AudioSynth.Tests {
         public void Loader_SoundFontWithOnePreset_ReturnsOneSf2Patch() {
             byte[] sf2 = Sf2TestBuilder.BuildWithOnePreset();
 
-            IReadOnlyList<IPatch> patches = Loader.Load(new MemoryStream(sf2));
+            SoundBank bank = Loader.Load(new MemoryStream(sf2));
 
-            Assert.That(patches, Has.Count.EqualTo(1),
+            Assert.That(bank.Patches, Has.Count.EqualTo(1),
                 "A SoundFont with one preset must return exactly one patch.");
-            Assert.That(patches[0], Is.InstanceOf<Sf2Patch>(),
+            Assert.That(bank.Patches[0], Is.InstanceOf<Sf2Patch>(),
                 "The returned patch must be an Sf2Patch.");
         }
 
@@ -165,8 +164,8 @@ namespace Pooshit.AudioSynth.Tests {
         [Description("StartVoice returns an inactive voice when the preset has no resolvable instrument zones.")]
         public void Sf2Patch_StartVoice_ReturnsInactiveVoiceWhenNoZoneMatches() {
             byte[] sf2 = Sf2TestBuilder.BuildWithOnePreset();
-            IReadOnlyList<IPatch> patches = Loader.Load(new MemoryStream(sf2));
-            IPatch patch = patches[0];
+            SoundBank bank = Loader.Load(new MemoryStream(sf2));
+            IPatch patch = bank.Patches[0];
 
             IVoice voice = patch.StartVoice(60, 100);
 
@@ -180,8 +179,8 @@ namespace Pooshit.AudioSynth.Tests {
             short[] smpl = new short[] { 100, -200, 32767, -32768 };
             byte[] sf2 = Sf2TestBuilder.BuildWithOnePreset(smpl: smpl);
 
-            IReadOnlyList<IPatch> patches = Loader.Load(new MemoryStream(sf2));
-            Sf2Patch patch = (Sf2Patch)patches[0];
+            SoundBank bank = Loader.Load(new MemoryStream(sf2));
+            Sf2Patch patch = (Sf2Patch)bank.Patches[0];
 
             Assert.That(patch.SampleData.BitsPerSample, Is.EqualTo(16));
             Assert.That(patch.SampleData.GetSample(0), Is.EqualTo(100));
@@ -196,9 +195,9 @@ namespace Pooshit.AudioSynth.Tests {
             byte[] sf2 = Sf2TestBuilder.BuildEmpty();
 
             using NonSeekableStream ns = new NonSeekableStream(sf2);
-            IReadOnlyList<IPatch> patches = Loader.Load(ns);
+            SoundBank bank = Loader.Load(ns);
 
-            Assert.That(patches, Is.Empty, "Loading from a non-seekable stream must succeed.");
+            Assert.That(bank.Patches, Is.Empty, "Loading from a non-seekable stream must succeed.");
         }
 
         [Test]
