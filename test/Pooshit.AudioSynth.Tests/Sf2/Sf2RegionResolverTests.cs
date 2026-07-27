@@ -579,8 +579,8 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
-        [Description("A ModulationLFOToVolume generator beyond the ±960-centibel stability cap is clamped.")]
-        public void TryResolve_LfoVolumeDepthBeyondCap_IsClamped() {
+        [Description("A positive ModulationLFOToVolume generator beyond the ±960-centibel stability cap is clamped to +960.")]
+        public void TryResolve_LfoVolumeDepthBeyondPositiveCap_IsClamped() {
             Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationLFOToVolume, 2000));
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
 
@@ -589,6 +589,19 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(found, Is.True);
             Assert.That(region!.Lfo.VolumeDepthCentibels, Is.EqualTo(960f),
                 "2000-centibel depth must clamp to the +960-centibel stability cap.");
+        }
+
+        [Test]
+        [Description("A negative ModulationLFOToVolume generator beyond the ±960-centibel stability cap is clamped to -960.")]
+        public void TryResolve_LfoVolumeDepthBeyondNegativeCap_IsClamped() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationLFOToVolume, unchecked((ushort)(short)-2000)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.VolumeDepthCentibels, Is.EqualTo(-960f),
+                "-2000-centibel depth must clamp to the -960-centibel stability cap.");
         }
 
         [Test]
@@ -605,8 +618,21 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
-        [Description("A ModulationLFOToFilterCutoffFrequency generator beyond the ±12000-cent stability cap is clamped.")]
-        public void TryResolve_LfoFilterDepthBeyondCap_IsClamped() {
+        [Description("A positive ModulationLFOToFilterCutoffFrequency generator beyond the ±12000-cent stability cap is clamped to +12000.")]
+        public void TryResolve_LfoFilterDepthBeyondPositiveCap_IsClamped() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationLFOToFilterCutoffFrequency, 20000));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.FilterDepthCents, Is.EqualTo(12000f),
+                "20000-cent depth must clamp to the +12000-cent stability cap.");
+        }
+
+        [Test]
+        [Description("A negative ModulationLFOToFilterCutoffFrequency generator beyond the ±12000-cent stability cap is clamped to -12000.")]
+        public void TryResolve_LfoFilterDepthBeyondNegativeCap_IsClamped() {
             Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationLFOToFilterCutoffFrequency, unchecked((ushort)(short)-20000)));
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
 
