@@ -30,6 +30,11 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         internal List<(int Channel, float Gain)> ChannelGainCalls { get; } = new List<(int, float)>();
 
         /// <summary>
+        /// Every (channel, semitones) pair passed to <see cref="SetChannelPitchBend"/>, in call order.
+        /// </summary>
+        internal List<(int Channel, float Semitones)> ChannelPitchBendCalls { get; } = new List<(int, float)>();
+
+        /// <summary>
         /// Every (channel, key, velocity) triple passed to <see cref="NoteOn"/>, in call order.
         /// </summary>
         internal List<(int Channel, int Key, int Velocity)> NoteOnCalls { get; } = new List<(int, int, int)>();
@@ -39,6 +44,9 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
 
         /// <inheritdoc/>
         public void SetChannelGain(int channel, float gain) => ChannelGainCalls.Add((channel, gain));
+
+        /// <inheritdoc/>
+        public void SetChannelPitchBend(int channel, float semitones) => ChannelPitchBendCalls.Add((channel, semitones));
 
         /// <inheritdoc/>
         public void NoteOn(int channel, int key, int velocity) => NoteOnCalls.Add((channel, key, velocity));
