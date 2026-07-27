@@ -32,6 +32,15 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// <summary>Full-scale value for a 7-bit MIDI controller.</summary>
         const int ControllerFullScale = 127;
 
+        /// <summary>GM default pitch-bend range, in semitones, applied symmetrically around center.</summary>
+        const float PitchBendSemitoneRange = 2f;
+
+        /// <summary>The centered (no-bend) 14-bit PitchWheel value.</summary>
+        const int PitchWheelCenter = 8192;
+
+        /// <summary>The 14-bit PitchWheel value span from center to either extreme.</summary>
+        const int PitchWheelSpan = 8192;
+
         /// <summary>
         /// Builds the ordered sample-offset schedule for <paramref name="sequence"/>; pure, no audio
         /// touched. Folds a <c>NoteOn</c> with velocity 0 into its <c>NoteOff</c> equivalent.
@@ -124,6 +133,11 @@ namespace Pooshit.AudioSynth.Sequencing {
                     else
                         break;
                     synthesizer.SetChannelGain(channel.MidiChannel, ChannelGain(cc7[channel.MidiChannel], cc11[channel.MidiChannel]));
+                    break;
+                case ChannelCommandType.PitchWheel:
+                    int value14 = (channel.Data2 << 7) | channel.Data1;
+                    float semitones = (value14 - PitchWheelCenter) / (float)PitchWheelSpan * PitchBendSemitoneRange;
+                    synthesizer.SetChannelPitchBend(channel.MidiChannel, semitones);
                     break;
             }
         }

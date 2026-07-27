@@ -21,5 +21,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// Enters the release phase on note-off.
         /// </summary>
         void Release();
+
+        /// <summary>
+        /// Sets the voice's pitch-bend ratio, a dimensionless multiplicative factor applied to the
+        /// voice's read-position increment (1.0 = no bend).
+        /// </summary>
+        void SetPitchBend(float pitchFactor);
     }
 }

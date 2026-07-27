@@ -7,7 +7,10 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// Pull-based voice engine that implements <see cref="ISynthesizer"/>; turns MIDI-style note events
     /// into voices, renders them in fixed-size internal blocks, mixes with equal-power centre pan and a
     /// zipper-free per-channel mix gain through a master soft-clip stage, then a single NaN/Inf-safe
-    /// finalize choke point (INV-2). All buffers are ctor-sized; steady-state <see cref="Read"/> allocates nothing.
+    /// finalize choke point (INV-2). Holds a per-channel pitch-bend factor that fans out to the channel's
+    /// sounding voices and is inherited by notes started while a bend is active; a centered channel
+    /// (1.0) leaves every voice's increment bit-for-bit unchanged (INV-3). All buffers are ctor-sized;
+    /// steady-state <see cref="Read"/> allocates nothing.
     /// </summary>
     public sealed class Synthesizer : ISynthesizer {
 
@@ -23,6 +26,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         readonly IPatch[] channelPatch;
         readonly GainRamp[] channelGain;
         readonly float[] channelGainBlock;
+        readonly float[] channelBendFactor;
         readonly VoiceSlot[] pool;
         readonly float[] scratch;
         readonly float[] master;
@@ -47,6 +51,9 @@ namespace Pooshit.AudioSynth.Synthesis {
                 channelGain[i].SetTarget(1f);
             }
             channelGainBlock = new float[ChannelCount * options.BlockFrames];
+            channelBendFactor = new float[ChannelCount];
+            for (int i = 0; i < channelBendFactor.Length; i++)
+                channelBendFactor[i] = 1f;
             pool = new VoiceSlot[options.MaxVoices];
             scratch = new float[options.BlockFrames];
             master = new float[options.BlockFrames * options.Channels];
@@ -72,6 +79,20 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         /// <inheritdoc/>
+        public void SetChannelPitchBend(int channel, float semitones) {
+            if (channel < 0 || channel >= ChannelCount)
+                throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
+
+            float factor = (float)Math.Pow(2.0, semitones / 12.0);
+            channelBendFactor[channel] = factor;
+            for (int i = 0; i < pool.Length; i++) {
+                ref VoiceSlot slot = ref pool[i];
+                if (slot.IsOccupied && slot.Channel == channel)
+                    slot.Voice!.SetPitchBend(factor);
+            }
+        }
+
+        /// <inheritdoc/>
         public void NoteOn(int channel, int key, int velocity) {
             if (channel < 0 || channel >= ChannelCount)
                 throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
@@ -81,6 +102,7 @@ namespace Pooshit.AudioSynth.Synthesis {
                 return;
 
             IVoice voice = channelPatch[channel].StartVoice(key, velocity);
+            voice.SetPitchBend(channelBendFactor[channel]);
             ref VoiceSlot slot = ref pool[freeSlot];
             slot.IsOccupied = true;
             slot.Channel = channel;

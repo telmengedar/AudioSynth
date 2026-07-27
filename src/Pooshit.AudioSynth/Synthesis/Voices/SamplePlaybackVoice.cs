@@ -18,7 +18,9 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
     /// control block, since a stepped gain multiplier would itself be an audible click; filter-sweep (LFO
     /// to cutoff) re-targets the biquad at the control rate via <see cref="BiquadLowPassFilter.SetCutoff"/>,
     /// which is click-free by construction (state is preserved across the retarget).  Zero depth on all
-    /// three routings reproduces the pre-LFO render bit-for-bit.
+    /// three routings reproduces the pre-LFO render bit-for-bit.  <see cref="SetPitchBend"/> folds a
+    /// channel-driven pitch-bend ratio into the same control-tick increment recompute; a centered bend
+    /// (1.0) reproduces the pre-bend increment bit-for-bit.
     /// </summary>
     public sealed class SamplePlaybackVoice : IVoice {
 
@@ -32,6 +34,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         BiquadLowPassFilter filter;
         ModulationLfo lfo;
         float effectiveIncrement;
+        float bendFactor;
         float tremoloCurrent;
         float tremoloStep;
         int controlTicksRemaining;
@@ -57,6 +60,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
             filter = new BiquadLowPassFilter(region.Filter, outputSampleRate);
             lfo = new ModulationLfo(region.Lfo, outputSampleRate);
             effectiveIncrement = pitchIncrement;
+            bendFactor = 1f;
             tremoloCurrent = 1f;
             tremoloStep = 0f;
             controlTicksRemaining = 0;
@@ -76,6 +80,11 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         }
 
         /// <inheritdoc/>
+        public void SetPitchBend(float pitchFactor) {
+            bendFactor = pitchFactor;
+        }
+
+        /// <inheritdoc/>
         public int RenderBlock(Span<float> block) {
             if (!isActive) {
                 block.Clear();
@@ -86,7 +95,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
             for (int i = 0; i < count; i++) {
                 if (controlTicksRemaining <= 0) {
                     float lfoValue = lfo.Advance(ControlRateFrames);
-                    effectiveIncrement = pitchIncrement * (float)Math.Pow(2.0, lfoValue * region.Lfo.PitchDepthCents / 1200.0);
+                    effectiveIncrement = pitchIncrement * (float)Math.Pow(2.0, lfoValue * region.Lfo.PitchDepthCents / 1200.0) * bendFactor;
 
                     if (region.Lfo.VolumeDepthCentibels != 0f) {
                         float tremoloTarget = (float)Math.Pow(10.0, lfoValue * region.Lfo.VolumeDepthCentibels / 200.0);

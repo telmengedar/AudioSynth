@@ -52,6 +52,14 @@ namespace Pooshit.AudioSynth.Tests {
             return this;
         }
 
+        internal MidiTrackEventBuilder PitchWheel(int deltaTicks, byte channel, int value14) {
+            body.AddRange(MidiTestBuilder.EncodeVariableLength(deltaTicks));
+            body.Add((byte)(0xE0 | channel));
+            body.Add((byte)(value14 & 0x7F));
+            body.Add((byte)((value14 >> 7) & 0x7F));
+            return this;
+        }
+
         internal MidiTrackEventBuilder EndOfTrack(int deltaTicks = 0) {
             body.AddRange(MidiTestBuilder.EncodeVariableLength(deltaTicks));
             body.Add(0xFF);
