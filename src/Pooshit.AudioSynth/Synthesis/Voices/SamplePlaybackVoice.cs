@@ -10,15 +10,24 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
     /// contour, which owns the click-free onset and the note-off release fade) and a <see cref="GainRamp"/>
     /// (the zipper-free slew of the velocity-derived scalar gain).  The filter sits before the amplifier,
     /// realising the SF2 signal chain oscillator → low-pass filter → amplifier.  Supports no-loop one-shot
-    /// and continuous looping.
+    /// and continuous looping.  The region's <see cref="ModulationLfo"/> re-evaluates every
+    /// <see cref="ControlRateFrames"/> frames and steps the read-position increment's slope (vibrato);
+    /// held-then-stepped is exactly how the increment already behaved before the LFO, so a tick never
+    /// introduces an amplitude discontinuity (INV-1 by construction) and zero pitch depth reproduces the
+    /// pre-LFO increment bit-for-bit.
     /// </summary>
     public sealed class SamplePlaybackVoice : IVoice {
+
+        const int ControlRateFrames = 64;
 
         readonly SampleRegion region;
         readonly float pitchIncrement;
         GainRamp gainRamp;
         AmplitudeEnvelope envelope;
         BiquadLowPassFilter filter;
+        ModulationLfo lfo;
+        float effectiveIncrement;
+        int controlTicksRemaining;
         double readPos;
         bool isActive;
         bool released;
@@ -38,6 +47,9 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
             gainRamp.SetTarget(targetGain);
             envelope = new AmplitudeEnvelope(region.Envelope, outputSampleRate);
             filter = new BiquadLowPassFilter(region.Filter, outputSampleRate);
+            lfo = new ModulationLfo(region.Lfo, outputSampleRate);
+            effectiveIncrement = pitchIncrement;
+            controlTicksRemaining = 0;
             readPos = region.Start;
             isActive = true;
             released = false;
@@ -62,6 +74,13 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
 
             int count = block.Length;
             for (int i = 0; i < count; i++) {
+                if (controlTicksRemaining <= 0) {
+                    float lfoValue = lfo.Advance(ControlRateFrames);
+                    effectiveIncrement = pitchIncrement * (float)Math.Pow(2.0, lfoValue * region.Lfo.PitchDepthCents / 1200.0);
+                    controlTicksRemaining = ControlRateFrames;
+                }
+                controlTicksRemaining--;
+
                 float gain = envelope.AdvanceFrame() * gainRamp.AdvanceFrame();
 
                 float sample;
@@ -105,7 +124,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         }
 
         void AdvanceReadPosition() {
-            readPos += pitchIncrement;
+            readPos += effectiveIncrement;
 
             if (region.LoopMode == LoopMode.Continuous) {
                 double loopLen = region.LoopEnd - region.LoopStart;

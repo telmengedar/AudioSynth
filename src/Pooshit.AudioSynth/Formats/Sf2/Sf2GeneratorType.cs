@@ -21,7 +21,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// <summary>Sample start point coarse offset (×32768 sample data points).</summary>
         StartAddressCoarseOffset = 4,
 
-        /// <summary>Modulation LFO to pitch (centibels).</summary>
+        /// <summary>Modulation LFO to pitch (cents).</summary>
         ModulationLFOToPitch = 5,
 
         /// <summary>Vibrato LFO to pitch (centibels).</summary>

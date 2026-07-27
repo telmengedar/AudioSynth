@@ -22,6 +22,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <param name="pitchCorrectionCents">fine-tuning offset in cents applied on top of the key transposition</param>
         /// <param name="envelope">volume-envelope parameters shaping this region's amplitude over the note's life</param>
         /// <param name="filter">low-pass filter parameters shaping this region's timbre before the amplifier</param>
+        /// <param name="lfo">modulation-LFO parameters driving this region's vibrato over the note's life</param>
         public SampleRegion(
             float[] buffer,
             int start,
@@ -33,7 +34,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             int rootKey,
             int pitchCorrectionCents,
             EnvelopeParameters envelope,
-            FilterParameters filter) {
+            FilterParameters filter,
+            LfoParameters lfo) {
             if (buffer is null)
                 throw new ArgumentNullException(nameof(buffer));
             if (start < 0 || start >= buffer.Length)
@@ -61,6 +63,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             PitchCorrectionCents = pitchCorrectionCents;
             Envelope = envelope;
             Filter = filter;
+            Lfo = lfo;
         }
 
         /// <summary>
@@ -117,5 +120,10 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// Low-pass filter parameters shaping this region's timbre before the amplifier stage.
         /// </summary>
         public FilterParameters Filter { get; }
+
+        /// <summary>
+        /// Modulation-LFO parameters driving this region's vibrato (pitch modulation) over the note's life.
+        /// </summary>
+        public LfoParameters Lfo { get; }
     }
 }

@@ -22,6 +22,9 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const int MinFilterCutoffCents = 1500;
         const int MaxFilterResonanceCentibels = 960;
         const double FilterCutoffReferenceHz = 8.176;
+        const int MaxLfoPitchDepthCents = 1200;
+        const float MinLfoFrequencyHz = 0.1f;
+        const float MaxLfoFrequencyHz = 20f;
 
         readonly Sf2PresetHeader preset;
         readonly Sf2Instrument[] instruments;
@@ -191,6 +194,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
             EnvelopeParameters envelope = BuildEnvelopeParameters(zone, globalZone);
             FilterParameters filter = BuildFilterParameters(zone, globalZone);
+            LfoParameters lfo = BuildLfoParameters(zone, globalZone);
 
             return new SampleRegion(
                 floatPool,
@@ -203,7 +207,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 rootKey,
                 pitchCorrectionCents,
                 envelope,
-                filter);
+                filter,
+                lfo);
         }
 
         static FilterParameters BuildFilterParameters(Sf2Zone zone, Sf2Zone? globalZone) {
@@ -234,6 +239,29 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             double resonanceDb = centibels / 10.0;
             double q = Math.Pow(10.0, resonanceDb / 20.0) * FilterParameters.ButterworthResonance;
             return (float)q;
+        }
+
+        static LfoParameters BuildLfoParameters(Sf2Zone zone, Sf2Zone? globalZone) {
+            float delay = TimecentsToSeconds(
+                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.DelayModulationLFO, DefaultEnvelopeTimecents));
+            float frequencyHz = LfoFrequencyCentsToHz(
+                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.FrequencyModulationLFO, defaultValue: 0));
+            int pitchDepthCents = GetEffectiveInt16(
+                zone, globalZone, Sf2GeneratorType.ModulationLFOToPitch, defaultValue: 0);
+            if (pitchDepthCents > MaxLfoPitchDepthCents)
+                pitchDepthCents = MaxLfoPitchDepthCents;
+            if (pitchDepthCents < -MaxLfoPitchDepthCents)
+                pitchDepthCents = -MaxLfoPitchDepthCents;
+            return new LfoParameters(delay, frequencyHz, pitchDepthCents);
+        }
+
+        static float LfoFrequencyCentsToHz(int cents) {
+            double hz = FilterCutoffReferenceHz * Math.Pow(2.0, cents / 1200.0);
+            if (hz < MinLfoFrequencyHz)
+                hz = MinLfoFrequencyHz;
+            if (hz > MaxLfoFrequencyHz)
+                hz = MaxLfoFrequencyHz;
+            return (float)hz;
         }
 
         static EnvelopeParameters BuildEnvelopeParameters(Sf2Zone zone, Sf2Zone? globalZone) {

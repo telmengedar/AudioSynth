@@ -437,5 +437,116 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(region!.Filter.Resonance, Is.GreaterThan(FilterParameters.ButterworthResonance),
                 "120 cB of resonance must raise Q above the flat Butterworth value.");
         }
+
+        [Test]
+        [Description("Absent mod-LFO generators yield the SF2 default frequency (8.176 Hz) and zero pitch depth (inert).")]
+        public void TryResolve_NoLfoGenerators_YieldsSf2DefaultsAndZeroDepth() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.FrequencyHz, Is.EqualTo(8.176f).Within(0.01f),
+                "Absent FrequencyModulationLFO must map to the 0-cent default (8.176 Hz).");
+            Assert.That(region.Lfo.PitchDepthCents, Is.EqualTo(0f),
+                "Absent ModulationLFOToPitch must map to zero depth (inert).");
+        }
+
+        [Test]
+        [Description("FrequencyModulationLFO(22) generator maps absolute cents to hertz via 8.176 * 2^(cents/1200).")]
+        public void TryResolve_LfoFrequencyGenerator_MapsToHertz() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FrequencyModulationLFO, 1200));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            float expectedHz = (float)(8.176 * System.Math.Pow(2.0, 1200.0 / 1200.0));
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.FrequencyHz, Is.EqualTo(expectedHz).Within(expectedHz * 0.01f),
+                "1200 cents must map to 8.176 * 2^1 Hz.");
+        }
+
+        [Test]
+        [Description("ModulationLFOToPitch(5) generator maps directly to PitchDepthCents.")]
+        public void TryResolve_LfoPitchDepthGenerator_MapsToPitchDepthCents() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationLFOToPitch, unchecked((ushort)(short)150)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.PitchDepthCents, Is.EqualTo(150f),
+                "ModulationLFOToPitch=150 cents must map directly to PitchDepthCents.");
+        }
+
+        [Test]
+        [Description("A positive ModulationLFOToPitch generator beyond the ±1200-cent stability cap is clamped to +1200.")]
+        public void TryResolve_LfoPitchDepthBeyondPositiveCap_IsClamped() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationLFOToPitch, 4000));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.PitchDepthCents, Is.EqualTo(1200f),
+                "4000-cent depth must clamp to the +1200-cent stability cap.");
+        }
+
+        [Test]
+        [Description("A negative ModulationLFOToPitch generator beyond the ±1200-cent stability cap is clamped to -1200.")]
+        public void TryResolve_LfoPitchDepthBeyondNegativeCap_IsClamped() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationLFOToPitch, unchecked((ushort)(short)-4000)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.PitchDepthCents, Is.EqualTo(-1200f),
+                "-4000-cent depth must clamp to the -1200-cent stability cap.");
+        }
+
+        [Test]
+        [Description("A very low FrequencyModulationLFO generator clamps to the minimum stable LFO frequency (0.1 Hz).")]
+        public void TryResolve_LfoFrequencyBelowMin_IsClampedToMinimum() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FrequencyModulationLFO, unchecked((ushort)(short)-8000)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.FrequencyHz, Is.EqualTo(0.1f).Within(1e-4f),
+                "-8000 cents must clamp to the 0.1 Hz stability floor.");
+        }
+
+        [Test]
+        [Description("A very high FrequencyModulationLFO generator clamps to the maximum stable LFO frequency (20 Hz).")]
+        public void TryResolve_LfoFrequencyAboveMax_IsClampedToMaximum() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FrequencyModulationLFO, 2400));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.FrequencyHz, Is.EqualTo(20f).Within(1e-3f),
+                "2400 cents must clamp to the 20 Hz stability ceiling.");
+        }
+
+        [Test]
+        [Description("Local zone mod-LFO generators override the global instrument zone's values.")]
+        public void TryResolve_LocalLfoGeneratorsOverrideGlobal() {
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.ModulationLFOToPitch, unchecked((ushort)(short)50)));
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationLFOToPitch, unchecked((ushort)(short)300)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { globalZone, localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Lfo.PitchDepthCents, Is.EqualTo(300f),
+                "local ModulationLFOToPitch=300 must override global ModulationLFOToPitch=50.");
+        }
     }
 }

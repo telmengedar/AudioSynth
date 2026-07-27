@@ -6,19 +6,22 @@ using Pooshit.AudioSynth.Audio;
 using Pooshit.AudioSynth.Audio.Sinks;
 using Pooshit.AudioSynth.Formats;
 using Pooshit.AudioSynth.Formats.Sf2;
+using Pooshit.AudioSynth.RenderDemo;
 using Pooshit.AudioSynth.Synthesis;
 
 string? soundfontPath = args.Length > 0 ? args[0] : FindDefaultSoundfont();
 if (soundfontPath is null || !File.Exists(soundfontPath)) {
     Console.Error.WriteLine(
         "No SoundFont supplied and the default Florestan test SoundFont was not found in the dev tree. " +
-        "Usage: RenderDemo <soundfont.sf2> [midiNote] [durationSeconds] [out.wav]");
+        "Usage: RenderDemo <soundfont.sf2> [midiNote] [durationSeconds] [out.wav] [vibratoRateHz] [vibratoDepthCents]");
     return 1;
 }
 
 int midiNote = args.Length > 1 ? int.Parse(args[1], CultureInfo.InvariantCulture) : 60;
 double durationSeconds = args.Length > 2 ? double.Parse(args[2], CultureInfo.InvariantCulture) : 2.0;
 string outputPath = args.Length > 3 ? args[3] : "render.wav";
+float vibratoRateHz = args.Length > 4 ? float.Parse(args[4], CultureInfo.InvariantCulture) : 0f;
+float vibratoDepthCents = args.Length > 5 ? float.Parse(args[5], CultureInfo.InvariantCulture) : 0f;
 
 AudioFormat format = new AudioFormat(SynthesizerOptions.DefaultSampleRate, SynthesizerOptions.DefaultChannels);
 
@@ -32,7 +35,11 @@ if (patches.Count == 0) {
     return 1;
 }
 
-Synthesizer synthesizer = new Synthesizer(new SynthesizerOptions(format.SampleRate, format.Channels), patches[0]);
+IPatch patch = patches[0];
+if (vibratoDepthCents != 0f && patch is Sf2Patch sf2Patch)
+    patch = new VibratoOverridePatch(sf2Patch, format.SampleRate, vibratoRateHz, vibratoDepthCents);
+
+Synthesizer synthesizer = new Synthesizer(new SynthesizerOptions(format.SampleRate, format.Channels), patch);
 
 long frames = (long)(durationSeconds * format.SampleRate);
 long holdFrames = frames / 2;
