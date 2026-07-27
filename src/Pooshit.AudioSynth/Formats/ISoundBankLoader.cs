@@ -1,4 +1,3 @@
-using System.Collections.Generic;
 using System.IO;
 using Pooshit.AudioSynth.Synthesis;
 
@@ -15,8 +14,8 @@ namespace Pooshit.AudioSynth.Formats {
         string FormatId { get; }
 
         /// <summary>
-        /// Loads patches from a bank stream, validating all sizes and offsets as untrusted input and throwing a typed error on malformed data.
+        /// Loads a sound bank from a bank stream, validating all sizes and offsets as untrusted input and throwing a typed error on malformed data.
         /// </summary>
-        IReadOnlyList<IPatch> Load(Stream source);
+        SoundBank Load(Stream source);
     }
 }

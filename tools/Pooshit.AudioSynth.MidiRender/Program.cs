@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using Pooshit.AudioSynth.Audio;
 using Pooshit.AudioSynth.Audio.Sinks;
@@ -32,11 +31,11 @@ string outputPath = args.Length > 2 ? args[2] : "midirender.wav";
 AudioFormat format = new AudioFormat(SynthesizerOptions.DefaultSampleRate, SynthesizerOptions.DefaultChannels);
 
 ISoundBankLoader loader = new Sf2SoundBankLoader(format.SampleRate);
-IReadOnlyList<IPatch> patches;
+SoundBank bank;
 using (FileStream soundfontStream = File.OpenRead(soundfontPath))
-    patches = loader.Load(soundfontStream);
+    bank = loader.Load(soundfontStream);
 
-if (patches.Count == 0) {
+if (bank.Count == 0) {
     Console.Error.WriteLine($"SoundFont '{soundfontPath}' contains no presets.");
     return 1;
 }
@@ -47,11 +46,11 @@ using (FileStream songStream = File.OpenRead(songPath))
 
 TimedMessageSequence sequence = new TimedMessageSequence(midiFile);
 SynthesizerOptions options = new SynthesizerOptions(format.SampleRate, format.Channels, SynthesizerOptions.DefaultBlockFrames, MaxVoicesForSongRender);
-Synthesizer synthesizer = new Synthesizer(options, patches[0]);
+Synthesizer synthesizer = new Synthesizer(options, bank.GetPatch(0, 0));
 
 long frames;
 using (WavFileSink sink = new WavFileSink(outputPath, format))
-    frames = MidiSequencer.Render(sequence, synthesizer, sink);
+    frames = MidiSequencer.Render(sequence, synthesizer, sink, bank);
 
 Console.WriteLine(
     $"Rendered {sequence.Messages.Length} MIDI event(s) from '{Path.GetFileName(songPath)}' " +

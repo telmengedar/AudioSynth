@@ -37,6 +37,13 @@ namespace Pooshit.AudioSynth.Tests {
             return this;
         }
 
+        internal MidiTrackEventBuilder ProgramChange(int deltaTicks, byte channel, byte program) {
+            body.AddRange(MidiTestBuilder.EncodeVariableLength(deltaTicks));
+            body.Add((byte)(0xC0 | channel));
+            body.Add(program);
+            return this;
+        }
+
         internal MidiTrackEventBuilder EndOfTrack(int deltaTicks = 0) {
             body.AddRange(MidiTestBuilder.EncodeVariableLength(deltaTicks));
             body.Add(0xFF);

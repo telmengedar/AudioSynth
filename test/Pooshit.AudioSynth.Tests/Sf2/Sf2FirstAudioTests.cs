@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using Pooshit.AudioSynth.Formats.Sf2;
@@ -49,12 +48,12 @@ namespace Pooshit.AudioSynth.Tests {
                      "resolves through Sf2Patch.StartVoice and produces non-silent bounded output.")]
         public void SyntheticFirstAudio_FullScaleSample_ProducesNonSilentBoundedOutput() {
             byte[] sf2 = Sf2TestBuilder.BuildWithResolvablePreset(sampleModes: 1);
-            IReadOnlyList<IPatch> patches = new Sf2SoundBankLoader(44100).Load(new MemoryStream(sf2));
+            SoundBank bank = new Sf2SoundBankLoader(44100).Load(new MemoryStream(sf2));
 
-            Assert.That(patches.Count, Is.GreaterThan(0), "Resolvable SF2 must produce at least one patch.");
+            Assert.That(bank.Count, Is.GreaterThan(0), "Resolvable SF2 must produce at least one patch.");
 
             SynthesizerOptions opts = new SynthesizerOptions(44100, 2, 64, 16);
-            Synthesizer synth = new Synthesizer(opts, patches[0]);
+            Synthesizer synth = new Synthesizer(opts, bank.Patches[0]);
 
             synth.NoteOn(0, 60, 100);
 
@@ -73,9 +72,9 @@ namespace Pooshit.AudioSynth.Tests {
         [Description("Sf2Patch.StartVoice returns a live voice (IsActive=true) for a resolvable zone.")]
         public void SyntheticFirstAudio_StartVoice_ReturnsActiveVoice() {
             byte[] sf2 = Sf2TestBuilder.BuildWithResolvablePreset(sampleModes: 1);
-            IReadOnlyList<IPatch> patches = new Sf2SoundBankLoader(44100).Load(new MemoryStream(sf2));
+            SoundBank bank = new Sf2SoundBankLoader(44100).Load(new MemoryStream(sf2));
 
-            IVoice voice = patches[0].StartVoice(60, 100);
+            IVoice voice = bank.Patches[0].StartVoice(60, 100);
 
             Assert.That(voice.IsActive, Is.True,
                 "StartVoice for a fully resolvable zone must return an active voice.");
@@ -85,8 +84,8 @@ namespace Pooshit.AudioSynth.Tests {
         [Description("Repeated NoteOn on the same key reuses the cached zone (no exception, still active).")]
         public void SyntheticFirstAudio_RepeatedNoteOn_UsesCachedZone() {
             byte[] sf2 = Sf2TestBuilder.BuildWithResolvablePreset(sampleModes: 1);
-            IReadOnlyList<IPatch> patches = new Sf2SoundBankLoader(44100).Load(new MemoryStream(sf2));
-            IPatch patch = patches[0];
+            SoundBank bank = new Sf2SoundBankLoader(44100).Load(new MemoryStream(sf2));
+            IPatch patch = bank.Patches[0];
 
             IVoice v1 = patch.StartVoice(60, 100);
             IVoice v2 = patch.StartVoice(60, 80);
@@ -105,15 +104,15 @@ namespace Pooshit.AudioSynth.Tests {
                 Assert.Ignore("__Florestan_Basic_GM_GS.sf2 not found in the local source tree; " +
                               "skipping real-file integration test. The synthetic proof above is always-green.");
 
-            IReadOnlyList<IPatch> patches;
+            SoundBank bank;
             using (FileStream fs = File.OpenRead(path!)) {
-                patches = new Sf2SoundBankLoader(44100).Load(fs);
+                bank = new Sf2SoundBankLoader(44100).Load(fs);
             }
 
-            Assert.That(patches.Count, Is.GreaterThan(0), "Florestan must contain at least one preset.");
+            Assert.That(bank.Count, Is.GreaterThan(0), "Florestan must contain at least one preset.");
 
             SynthesizerOptions opts = new SynthesizerOptions(44100, 2, 64, 16);
-            Synthesizer synth = new Synthesizer(opts, patches[0]);
+            Synthesizer synth = new Synthesizer(opts, bank.Patches[0]);
 
             synth.NoteOn(0, 60, 100);
 
