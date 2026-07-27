@@ -13,7 +13,12 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// damping low-pass dissipates energy every pass, so the reverb is BIBO-stable by construction — it never
     /// relies on the master soft-clip or <see cref="Synthesizer"/>'s NaN/Inf guard (INV-2) to stay bounded.
     /// Dry gain is fixed at 1.0, so <see cref="ReverbSettings.Wet"/> = 0 mixes <c>dry·1.0 + wet·0.0</c> — a
-    /// structural, float-exact passthrough.
+    /// structural, float-exact passthrough. <see cref="Process"/> is a send-return: it computes wet from a
+    /// caller-supplied <c>send</c> span and adds it to a separate <c>master</c> span, never touching the dry
+    /// signal already carried there. A caller that wants the original master-insert behaviour passes the same
+    /// span as both <c>send</c> and <c>master</c> (<c>Process(block, block)</c>) — arithmetically identical to
+    /// treating every voice as sending fully, since <c>master[i] += wetL</c> where wet was computed from
+    /// <c>master</c> itself.
     /// </summary>
     public sealed class Reverb {
 
@@ -77,19 +82,26 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         /// <summary>
-        /// Processes an interleaved stereo block in place: each <c>[L, R]</c> frame becomes
-        /// <c>[L + wetL, R + wetR]</c>, dry gain fixed at 1.0. Allocation-free; the comb/allpass delay
-        /// lines carry state across calls, so the decaying tail spans block boundaries.
+        /// Computes wet from <paramref name="send"/> and adds it to <paramref name="master"/> in place:
+        /// each <c>master</c> frame becomes <c>[L + wetL, R + wetR]</c>; dry is never added since
+        /// <paramref name="master"/> already carries it. <paramref name="send"/> may alias
+        /// <paramref name="master"/> (the master-insert special case — see class summary); each frame's
+        /// <c>send</c> values are read into locals before any write to that frame's <c>master</c>, so the
+        /// aliased case is read-before-write safe. Allocation-free; the comb/allpass delay lines carry
+        /// state across calls, so the decaying tail spans block boundaries.
         /// </summary>
-        /// <param name="block">interleaved stereo samples; length must be a multiple of 2</param>
-        public void Process(Span<float> block) {
-            if (block.Length % 2 != 0)
-                throw new ArgumentException($"block length ({block.Length}) must be a multiple of 2 (interleaved stereo).", nameof(block));
+        /// <param name="send">interleaved stereo send samples that feed the reverb; length must equal <paramref name="master"/>'s and be a multiple of 2</param>
+        /// <param name="master">interleaved stereo master samples that the wet signal is added into</param>
+        public void Process(ReadOnlySpan<float> send, Span<float> master) {
+            if (master.Length % 2 != 0)
+                throw new ArgumentException($"master length ({master.Length}) must be a multiple of 2 (interleaved stereo).", nameof(master));
+            if (send.Length != master.Length)
+                throw new ArgumentException($"send length ({send.Length}) must equal master length ({master.Length}).", nameof(send));
 
-            for (int i = 0; i < block.Length; i += 2) {
-                float left = block[i];
-                float right = block[i + 1];
-                float input = (left + right) * InputGain;
+            for (int i = 0; i < master.Length; i += 2) {
+                float sendL = send[i];
+                float sendR = send[i + 1];
+                float input = (sendL + sendR) * InputGain;
 
                 float wetL = 0f;
                 float wetR = 0f;
@@ -103,8 +115,8 @@ namespace Pooshit.AudioSynth.Synthesis {
                     wetR = allpassR[a].Process(wetR);
                 }
 
-                block[i] = left + wetL * wet1 + wetR * wet2;
-                block[i + 1] = right + wetR * wet1 + wetL * wet2;
+                master[i] += wetL * wet1 + wetR * wet2;
+                master[i + 1] += wetR * wet1 + wetL * wet2;
             }
         }
 

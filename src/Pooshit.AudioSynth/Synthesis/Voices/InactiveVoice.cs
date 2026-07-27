@@ -26,6 +26,9 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         public float Pan => 0f;
 
         /// <inheritdoc/>
+        public float ReverbSend => 0f;
+
+        /// <inheritdoc/>
         public int RenderBlock(Span<float> block) {
             block.Clear();
             return block.Length;

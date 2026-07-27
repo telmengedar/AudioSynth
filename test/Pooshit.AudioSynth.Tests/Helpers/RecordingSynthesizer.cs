@@ -40,6 +40,11 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         internal List<(int Channel, float Pan)> ChannelPanCalls { get; } = new List<(int, float)>();
 
         /// <summary>
+        /// Every (channel, level) pair passed to <see cref="SetChannelReverbSend"/>, in call order.
+        /// </summary>
+        internal List<(int Channel, float Level)> ChannelReverbSendCalls { get; } = new List<(int, float)>();
+
+        /// <summary>
         /// Every (channel, key, velocity) triple passed to <see cref="NoteOn"/>, in call order.
         /// </summary>
         internal List<(int Channel, int Key, int Velocity)> NoteOnCalls { get; } = new List<(int, int, int)>();
@@ -55,6 +60,9 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
 
         /// <inheritdoc/>
         public void SetChannelPan(int channel, float pan) => ChannelPanCalls.Add((channel, pan));
+
+        /// <inheritdoc/>
+        public void SetChannelReverbSend(int channel, float level) => ChannelReverbSendCalls.Add((channel, level));
 
         /// <inheritdoc/>
         public void NoteOn(int channel, int key, int velocity) => NoteOnCalls.Add((channel, key, velocity));

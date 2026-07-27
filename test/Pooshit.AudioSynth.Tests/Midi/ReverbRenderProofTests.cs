@@ -16,6 +16,17 @@ namespace Pooshit.AudioSynth.Tests {
     /// song end than the dry (Reverb absent) render — energy continuing after the last notes have released
     /// instead of decaying toward silence. Skips gracefully when dev-tree assets are absent.
     /// </summary>
+    /// <remarks>
+    /// <see cref="RealSong_WithReverb_HasLongerAmbientTailThanDryRender"/> renders with
+    /// <c>globalReverb: true</c> (DiVoid #7165/#7170): it exercises the master-insert reverb DSP itself
+    /// (the PR-16 behaviour this test was written to prove), not per-channel routing. The Florestan
+    /// soundfont's regions carry an explicit SF2 gen-16 (reverbEffectsSend) of 0 rather than omitting the
+    /// generator, so under the new per-channel default every voice's combined send is exactly zero and
+    /// this song renders bit-identical to dry regardless of CC91 — confirmed during implementation (design
+    /// §14 Q2) and exactly the "real-song render is illustrative, not diagnostic, when the asset doesn't
+    /// vary reverb send" contingency the design anticipated. The asset-free, deterministic
+    /// <see cref="Pooshit.AudioSynth.Tests.ReverbSendRoutingTests"/> is the routing's proof instead.
+    /// </remarks>
     [TestFixture]
     public class ReverbRenderProofTests {
 
@@ -35,7 +46,7 @@ namespace Pooshit.AudioSynth.Tests {
             return null;
         }
 
-        static float[] RenderSong(string songPath, string soundfontPath, ReverbSettings? reverb, out int channels) {
+        static float[] RenderSong(string songPath, string soundfontPath, ReverbSettings? reverb, out int channels, bool globalReverb = false) {
             AudioFormat format = new AudioFormat(SynthesizerOptions.DefaultSampleRate, SynthesizerOptions.DefaultChannels);
             channels = format.Channels;
 
@@ -49,7 +60,7 @@ namespace Pooshit.AudioSynth.Tests {
             TimedMessageSequence sequence = new TimedMessageSequence(midiFile);
 
             SynthesizerOptions options = new SynthesizerOptions(
-                format.SampleRate, format.Channels, SynthesizerOptions.DefaultBlockFrames, MaxVoices, reverb);
+                format.SampleRate, format.Channels, SynthesizerOptions.DefaultBlockFrames, MaxVoices, reverb, globalReverb);
             Synthesizer synthesizer = new Synthesizer(options, bank.GetPatch(0, 0));
             InMemoryAudioSink sink = new InMemoryAudioSink(format);
 
@@ -78,8 +89,8 @@ namespace Pooshit.AudioSynth.Tests {
                 return;
             }
 
-            float[] dry = RenderSong(songPath, soundfontPath, reverb: null, out int channels);
-            float[] wet = RenderSong(songPath, soundfontPath, ReverbSettings.Default, out _);
+            float[] dry = RenderSong(songPath, soundfontPath, reverb: null, out int channels, globalReverb: true);
+            float[] wet = RenderSong(songPath, soundfontPath, ReverbSettings.Default, out _, globalReverb: true);
 
             Assert.That(wet, Is.Not.Empty, "the wet render must produce audio.");
             Assert.That(dry.Length, Is.EqualTo(wet.Length), "reverb must not change the rendered frame count.");
