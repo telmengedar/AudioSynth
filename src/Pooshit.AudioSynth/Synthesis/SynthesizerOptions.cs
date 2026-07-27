@@ -35,12 +35,18 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <param name="blockFrames">internal render block size in frames; must be positive</param>
         /// <param name="maxVoices">maximum simultaneous voices; must be positive</param>
         /// <param name="reverb">master-bus reverb settings; <c>null</c> (the default) leaves the master path dry</param>
+        /// <param name="globalReverb">
+        /// reverb routing selector: <c>false</c> (the default) honours per-channel/per-voice reverb send
+        /// (CC91 × SF2 gen-16); <c>true</c> reverts to a uniform master insert where every voice sends
+        /// fully, reproducing the pre-send-bus (PR 16) render bit-for-bit
+        /// </param>
         public SynthesizerOptions(
             int sampleRate = DefaultSampleRate,
             int channels = DefaultChannels,
             int blockFrames = DefaultBlockFrames,
             int maxVoices = DefaultMaxVoices,
-            ReverbSettings? reverb = null) {
+            ReverbSettings? reverb = null,
+            bool globalReverb = false) {
             if (sampleRate <= 0)
                 throw new ArgumentOutOfRangeException(nameof(sampleRate), sampleRate, "Sample rate must be positive.");
             if (channels <= 0)
@@ -54,6 +60,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             BlockFrames = blockFrames;
             MaxVoices = maxVoices;
             Reverb = reverb;
+            GlobalReverb = globalReverb;
         }
 
         /// <summary>
@@ -81,5 +88,14 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// master path is unchanged. Only takes effect when <see cref="Channels"/> equals 2 (stereo).
         /// </summary>
         public ReverbSettings? Reverb { get; }
+
+        /// <summary>
+        /// Reverb routing selector. <c>false</c> (the default): each voice feeds the reverb through a
+        /// per-channel-weighted send bus, honouring CC91 (<see cref="ISynthesizer.SetChannelReverbSend"/>)
+        /// combined with each voice's SF2 gen-16 send. <c>true</c>: the reverb is a uniform master insert
+        /// (every voice sends fully), reproducing the pre-send-bus master-insert render bit-for-bit. Only
+        /// meaningful when <see cref="Reverb"/> is configured and <see cref="Channels"/> is 2 (stereo).
+        /// </summary>
+        public bool GlobalReverb { get; }
     }
 }

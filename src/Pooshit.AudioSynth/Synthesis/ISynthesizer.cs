@@ -40,5 +40,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// each block rather than captured at note-on. MIDI-neutral: mirrors <see cref="SetChannelGain"/>.
         /// </summary>
         void SetChannelPan(int channel, float pan);
+
+        /// <summary>
+        /// Sets a channel's reverb-send weight (typically driven by MIDI CC91), a scalar expected in
+        /// [0,1]; applies to the channel's currently-sounding and future voices, read live each block
+        /// rather than captured at note-on, and combined multiplicatively with each voice's static
+        /// <see cref="IVoice.ReverbSend"/>. MIDI-neutral: mirrors <see cref="SetChannelPan"/>.
+        /// </summary>
+        void SetChannelReverbSend(int channel, float level);
     }
 }

@@ -8,13 +8,18 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// into voices, renders them in fixed-size internal blocks, mixes each voice into real stereo
     /// placement via per-voice equal-power L/R gains (combining the channel's dynamic pan with the
     /// voice's static SF2 pan; non-stereo output collapses to the legacy centre <c>panGain</c>), then an
-    /// optional master <see cref="Reverb"/> insert (present only when <see cref="SynthesizerOptions.Reverb"/>
-    /// is configured and output is stereo; absent, it leaves the master path bit-for-bit unchanged), a
-    /// master soft-clip stage, then a single NaN/Inf-safe finalize choke point (INV-2). Holds a per-channel
-    /// pitch-bend factor that fans out to the channel's sounding voices and is inherited by notes started
-    /// while a bend is active; a centered channel (1.0) leaves every voice's increment bit-for-bit
-    /// unchanged (INV-3). All buffers, including the reverb's delay lines, are ctor-sized; steady-state
-    /// <see cref="Read"/> allocates nothing.
+    /// optional <see cref="Reverb"/> (present only when <see cref="SynthesizerOptions.Reverb"/> is
+    /// configured and output is stereo; absent, it leaves the master path bit-for-bit unchanged), a
+    /// master soft-clip stage, then a single NaN/Inf-safe finalize choke point (INV-2). The reverb is
+    /// routed as a send-return: by default (<see cref="SynthesizerOptions.GlobalReverb"/> = <c>false</c>)
+    /// each voice also adds into a per-channel-weighted stereo send bus (<c>clamp01(channelReverbSend[ch] +
+    /// voice.ReverbSend)</c>, honouring CC91 and SF2 gen-16 additively), and the reverb reads that bus; when
+    /// <see cref="SynthesizerOptions.GlobalReverb"/> is <c>true</c> the reverb reads the master directly
+    /// (every voice sends fully), reproducing the pre-send-bus uniform master-insert bit-for-bit. Holds a
+    /// per-channel pitch-bend factor that fans out to the channel's sounding voices and is inherited by
+    /// notes started while a bend is active; a centered channel (1.0) leaves every voice's increment
+    /// bit-for-bit unchanged (INV-3). All buffers, including the reverb's delay lines and the send bus,
+    /// are ctor-sized; steady-state <see cref="Read"/> allocates nothing.
     /// </summary>
     public sealed class Synthesizer : ISynthesizer {
 
@@ -41,11 +46,14 @@ namespace Pooshit.AudioSynth.Synthesis {
         readonly float[] channelGainBlock;
         readonly float[] channelBendFactor;
         readonly float[] channelPan;
+        readonly float[] channelReverbSend;
         readonly VoiceSlot[] pool;
         readonly float[] scratch;
         readonly float[] master;
+        readonly float[] sendBus;
         readonly float panGain;
         readonly Reverb? reverb;
+        readonly bool perChannelReverb;
 
         /// <summary>
         /// Creates a <see cref="Synthesizer"/> with the given options; <paramref name="defaultPatch"/> fills
@@ -70,6 +78,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             for (int i = 0; i < channelBendFactor.Length; i++)
                 channelBendFactor[i] = 1f;
             channelPan = new float[ChannelCount];
+            channelReverbSend = new float[ChannelCount];
             pool = new VoiceSlot[options.MaxVoices];
             scratch = new float[options.BlockFrames];
             master = new float[options.BlockFrames * options.Channels];
@@ -77,6 +86,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             reverb = options.Reverb != null && options.Channels == StereoChannelCount
                 ? new Reverb(options.Reverb, options.SampleRate)
                 : null;
+            perChannelReverb = reverb != null && !options.GlobalReverb;
+            sendBus = perChannelReverb ? new float[options.BlockFrames * options.Channels] : Array.Empty<float>();
         }
 
         /// <inheritdoc/>
@@ -116,6 +127,13 @@ namespace Pooshit.AudioSynth.Synthesis {
             if (channel < 0 || channel >= ChannelCount)
                 throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
             channelPan[channel] = pan;
+        }
+
+        /// <inheritdoc/>
+        public void SetChannelReverbSend(int channel, float level) {
+            if (channel < 0 || channel >= ChannelCount)
+                throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
+            channelReverbSend[channel] = level;
         }
 
         /// <inheritdoc/>
@@ -168,6 +186,10 @@ namespace Pooshit.AudioSynth.Synthesis {
                 Span<float> masterSlice = master.AsSpan(0, frames * channels);
                 masterSlice.Clear();
 
+                Span<float> sendSlice = perChannelReverb ? sendBus.AsSpan(0, frames * channels) : Span<float>.Empty;
+                if (perChannelReverb)
+                    sendSlice.Clear();
+
                 Span<float> scratchSlice = scratch.AsSpan(0, frames);
 
                 PrecomputeChannelGainBlock(frames);
@@ -192,6 +214,18 @@ namespace Pooshit.AudioSynth.Synthesis {
                             masterSlice[baseIndex] += pre * leftGain;
                             masterSlice[baseIndex + 1] += pre * rightGain;
                         }
+
+                        if (perChannelReverb) {
+                            float sendWeight = Clamp(channelReverbSend[slot.Channel] + slot.Voice.ReverbSend, 0f, 1f);
+                            if (sendWeight != 0f) {
+                                for (int frame = 0; frame < frames; frame++) {
+                                    float pre = scratchSlice[frame] * channelGainBlock[channelBase + frame] * sendWeight;
+                                    int baseIndex = frame * channels;
+                                    sendSlice[baseIndex] += pre * leftGain;
+                                    sendSlice[baseIndex + 1] += pre * rightGain;
+                                }
+                            }
+                        }
                     } else {
                         for (int frame = 0; frame < frames; frame++) {
                             float mixed = scratchSlice[frame] * channelGainBlock[channelBase + frame] * panGain;
@@ -207,7 +241,12 @@ namespace Pooshit.AudioSynth.Synthesis {
                     }
                 }
 
-                reverb?.Process(masterSlice);
+                if (reverb != null) {
+                    if (options.GlobalReverb)
+                        reverb.Process(masterSlice, masterSlice);
+                    else
+                        reverb.Process(sendSlice, masterSlice);
+                }
 
                 ApplyMasterBus(masterSlice);
                 Finalize(masterSlice);

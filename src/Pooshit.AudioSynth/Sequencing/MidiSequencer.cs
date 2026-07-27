@@ -35,6 +35,9 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// <summary>The centered (no-pan) 7-bit CC10 (Pan) value.</summary>
         const int PanControllerCenter = 64;
 
+        /// <summary>GM1 default for CC91 (Effects 1 Depth / reverb send).</summary>
+        const int DefaultReverbSend = 40;
+
         /// <summary>GM default pitch-bend range, in semitones, applied symmetrically around center.</summary>
         const float PitchBendSemitoneRange = 2f;
 
@@ -92,6 +95,7 @@ namespace Pooshit.AudioSynth.Sequencing {
                 cc11[channel] = DefaultExpression;
                 synthesizer.SetChannelGain(channel, ChannelGain(cc7[channel], cc11[channel]));
                 synthesizer.SetChannelPan(channel, 0f);
+                synthesizer.SetChannelReverbSend(channel, DefaultReverbSend / (float)ControllerFullScale);
             }
 
             ScheduledMidiEvent[] schedule = BuildSchedule(sequence, synthesizer.Format.SampleRate);
@@ -132,6 +136,10 @@ namespace Pooshit.AudioSynth.Sequencing {
                 case ChannelCommandType.Controller:
                     if (channel.Data1 == (byte)ControllerType.Pan) {
                         synthesizer.SetChannelPan(channel.MidiChannel, ControllerToPan(channel.Data2));
+                        break;
+                    }
+                    if (channel.Data1 == (byte)ControllerType.EffectsLevel) {
+                        synthesizer.SetChannelReverbSend(channel.MidiChannel, channel.Data2 / (float)ControllerFullScale);
                         break;
                     }
                     if (channel.Data1 == (byte)ControllerType.Volume)

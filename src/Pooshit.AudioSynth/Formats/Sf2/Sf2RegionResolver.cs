@@ -29,6 +29,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const int MaxLfoFilterDepthCents = 12000;
         const int MaxPanUnits = 500;
         const float PanUnitsDivisor = 500f;
+        const int MaxReverbSendUnits = 1000;
+        const float ReverbSendUnitsDivisor = 1000f;
 
         readonly Sf2PresetHeader preset;
         readonly Sf2Instrument[] instruments;
@@ -200,6 +202,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             FilterParameters filter = BuildFilterParameters(zone, globalZone);
             LfoParameters lfo = BuildLfoParameters(zone, globalZone);
             float pan = BuildPan(zone, globalZone);
+            float reverbSend = BuildReverbSend(zone, globalZone);
 
             return new SampleRegion(
                 floatPool,
@@ -214,7 +217,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 envelope,
                 filter,
                 lfo,
-                pan);
+                pan,
+                reverbSend);
         }
 
         /// <summary>
@@ -228,6 +232,21 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             if (raw < -MaxPanUnits)
                 raw = -MaxPanUnits;
             return raw / PanUnitsDivisor;
+        }
+
+        /// <summary>
+        /// Reads generator 16 (reverbEffectsSend) in 0.1%-units (0..1000 → 0..1); absent defaults to the
+        /// SF2 spec's literal generator default of 0 — an absent gen-16 contributes no additive bias, so
+        /// the channel's CC91 send still drives the voice on its own (combination is additive/clamped,
+        /// design §9.3 revised).
+        /// </summary>
+        static float BuildReverbSend(Sf2Zone zone, Sf2Zone? globalZone) {
+            int raw = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.ReverbEffectsSend, defaultValue: 0);
+            if (raw > MaxReverbSendUnits)
+                raw = MaxReverbSendUnits;
+            if (raw < 0)
+                raw = 0;
+            return raw / ReverbSendUnitsDivisor;
         }
 
         static FilterParameters BuildFilterParameters(Sf2Zone zone, Sf2Zone? globalZone) {

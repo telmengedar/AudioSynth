@@ -711,5 +711,76 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(region!.Pan, Is.EqualTo(1f),
                 "local Pan=+500 must override global Pan=-500.");
         }
+
+        [Test]
+        [Description("Absent ReverbEffectsSend(16) generator defaults to the SF2 spec's literal 0 (DiVoid #7170 " +
+                     "§9.3 revised): with the additive/clamped combination, an absent gen-16 contributes no " +
+                     "bias, so the channel's CC91 send alone still drives the voice.")]
+        public void TryResolve_NoReverbSendGenerator_DefaultsToZero() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ReverbSend, Is.EqualTo(0f),
+                "Absent ReverbEffectsSend(16) generator must default to the SF2 spec's literal 0.");
+        }
+
+        [Test]
+        [Description("ReverbEffectsSend(16)=500 (0.1%-units, half send) normalises to 0.5.")]
+        public void TryResolve_ReverbSend500_NormalisesToHalf() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ReverbEffectsSend, 500));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ReverbSend, Is.EqualTo(0.5f).Within(1e-6f),
+                "ReverbEffectsSend raw=500 must normalise to 0.5 (raw/1000).");
+        }
+
+        [Test]
+        [Description("ReverbEffectsSend(16)=0 (explicit dry) normalises to 0.0.")]
+        public void TryResolve_ReverbSendZero_NormalisesToZero() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ReverbEffectsSend, 0));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ReverbSend, Is.EqualTo(0f),
+                "An explicit ReverbEffectsSend=0 must normalise to 0.0 (fully dry region), unlike the absent case.");
+        }
+
+        [Test]
+        [Description("A ReverbEffectsSend(16) raw amount beyond the SF2 0..1000 range is clamped before normalisation.")]
+        public void TryResolve_ReverbSendBeyondRange_IsClamped() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ReverbEffectsSend, 2000));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ReverbSend, Is.EqualTo(1f),
+                "A raw amount above 1000 must clamp to 1000 before normalising, yielding 1.0.");
+        }
+
+        [Test]
+        [Description("Local zone ReverbEffectsSend(16) generator overrides the global instrument zone's value.")]
+        public void TryResolve_LocalReverbSendOverridesGlobal() {
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.ReverbEffectsSend, 1000));
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ReverbEffectsSend, 250));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { globalZone, localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ReverbSend, Is.EqualTo(0.25f).Within(1e-6f),
+                "local ReverbEffectsSend=250 must override global ReverbEffectsSend=1000.");
+        }
     }
 }

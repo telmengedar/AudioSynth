@@ -32,7 +32,7 @@ namespace Pooshit.AudioSynth.Tests {
             float[] block = new float[WindowFrames * 2 * windows];
             block[0] = 1f;
             block[1] = 1f;
-            reverb.Process(block);
+            reverb.Process(block, block);
             return block;
         }
 
@@ -89,7 +89,7 @@ namespace Pooshit.AudioSynth.Tests {
                 block[i] = (float)(random.NextDouble() * 2.0 - 1.0);
             float[] original = (float[])block.Clone();
 
-            reverb.Process(block);
+            reverb.Process(block, block);
 
             Assert.That(block, Is.EqualTo(original), "Wet=0 must reproduce the input bit-for-bit.");
         }

@@ -24,6 +24,12 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <param name="filter">low-pass filter parameters shaping this region's timbre before the amplifier</param>
         /// <param name="lfo">modulation-LFO parameters driving this region's vibrato over the note's life</param>
         /// <param name="pan">static per-voice stereo position in [-1,1] (-1 = full left, 0 = centre, +1 = full right), sourced from SF2 generator 17</param>
+        /// <param name="reverbSend">
+        /// static per-voice reverb-send weight in [0,1], sourced from SF2 generator 16 (reverbEffectsSend);
+        /// defaults to <c>1.0</c> (neutral pass-through — a region without an explicit gen-16 lets the
+        /// channel's <see cref="ISynthesizer.SetChannelReverbSend"/> weight drive fully) rather than SF2's
+        /// literal gen-16 default of 0, so CC91 is never impotent for regions that omit the generator.
+        /// </param>
         public SampleRegion(
             float[] buffer,
             int start,
@@ -37,7 +43,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             EnvelopeParameters envelope,
             FilterParameters filter,
             LfoParameters lfo,
-            float pan) {
+            float pan,
+            float reverbSend = 1f) {
             if (buffer is null)
                 throw new ArgumentNullException(nameof(buffer));
             if (start < 0 || start >= buffer.Length)
@@ -67,6 +74,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             Filter = filter;
             Lfo = lfo;
             Pan = pan;
+            ReverbSend = reverbSend;
         }
 
         /// <summary>
@@ -134,5 +142,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// sourced from SF2 generator 17 and combined with the channel's dynamic pan at mix time.
         /// </summary>
         public float Pan { get; }
+
+        /// <summary>
+        /// Static per-voice reverb-send weight in [0,1], sourced from SF2 generator 16 and combined
+        /// multiplicatively with the channel's dynamic reverb-send weight at mix time.
+        /// </summary>
+        public float ReverbSend { get; }
     }
 }

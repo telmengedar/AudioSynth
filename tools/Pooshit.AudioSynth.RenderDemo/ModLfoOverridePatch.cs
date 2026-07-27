@@ -53,7 +53,7 @@ namespace Pooshit.AudioSynth.RenderDemo {
             SampleRegion overridden = new SampleRegion(
                 region!.Buffer, region.Start, region.End, region.LoopStart, region.LoopEnd, region.LoopMode,
                 region.SourceSampleRate, region.RootKey, region.PitchCorrectionCents, region.Envelope, region.Filter,
-                lfo, region.Pan);
+                lfo, region.Pan, region.ReverbSend);
 
             SamplePatch patch = new SamplePatch(overridden, outputSampleRate);
             return patch.StartVoice(key, velocity);
