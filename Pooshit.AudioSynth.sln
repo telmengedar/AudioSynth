@@ -15,6 +15,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tools", "tools", "{07C2787E
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pooshit.AudioSynth.RenderDemo", "tools\Pooshit.AudioSynth.RenderDemo\Pooshit.AudioSynth.RenderDemo.csproj", "{6DB4A656-34ED-424C-8C34-EAB724B79653}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Pooshit.AudioSynth.MidiRender", "tools\Pooshit.AudioSynth.MidiRender\Pooshit.AudioSynth.MidiRender.csproj", "{13C2417C-7DC7-4756-B5E5-5EA150EA2691}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -61,6 +63,18 @@ Global
 		{6DB4A656-34ED-424C-8C34-EAB724B79653}.Release|x64.Build.0 = Release|Any CPU
 		{6DB4A656-34ED-424C-8C34-EAB724B79653}.Release|x86.ActiveCfg = Release|Any CPU
 		{6DB4A656-34ED-424C-8C34-EAB724B79653}.Release|x86.Build.0 = Release|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Debug|x64.Build.0 = Debug|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Debug|x86.Build.0 = Debug|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Release|Any CPU.Build.0 = Release|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Release|x64.ActiveCfg = Release|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Release|x64.Build.0 = Release|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Release|x86.ActiveCfg = Release|Any CPU
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -69,5 +83,6 @@ Global
 		{4957209A-EF1B-40F2-BB58-9930BF678F97} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{C1059C59-6D06-4C31-B84D-6422BED0234E} = {0C88DD14-F956-CE84-757C-A364CCF449FC}
 		{6DB4A656-34ED-424C-8C34-EAB724B79653} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
+		{13C2417C-7DC7-4756-B5E5-5EA150EA2691} = {07C2787E-EAC7-C090-1BA3-A61EC2A24D84}
 	EndGlobalSection
 EndGlobal
