@@ -25,6 +25,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const int MaxLfoPitchDepthCents = 1200;
         const float MinLfoFrequencyHz = 0.1f;
         const float MaxLfoFrequencyHz = 20f;
+        const int MaxLfoVolumeDepthCentibels = 960;
+        const int MaxLfoFilterDepthCents = 12000;
 
         readonly Sf2PresetHeader preset;
         readonly Sf2Instrument[] instruments;
@@ -252,7 +254,22 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 pitchDepthCents = MaxLfoPitchDepthCents;
             if (pitchDepthCents < -MaxLfoPitchDepthCents)
                 pitchDepthCents = -MaxLfoPitchDepthCents;
-            return new LfoParameters(delay, frequencyHz, pitchDepthCents);
+
+            int volumeDepthCentibels = GetEffectiveInt16(
+                zone, globalZone, Sf2GeneratorType.ModulationLFOToVolume, defaultValue: 0);
+            if (volumeDepthCentibels > MaxLfoVolumeDepthCentibels)
+                volumeDepthCentibels = MaxLfoVolumeDepthCentibels;
+            if (volumeDepthCentibels < -MaxLfoVolumeDepthCentibels)
+                volumeDepthCentibels = -MaxLfoVolumeDepthCentibels;
+
+            int filterDepthCents = GetEffectiveInt16(
+                zone, globalZone, Sf2GeneratorType.ModulationLFOToFilterCutoffFrequency, defaultValue: 0);
+            if (filterDepthCents > MaxLfoFilterDepthCents)
+                filterDepthCents = MaxLfoFilterDepthCents;
+            if (filterDepthCents < -MaxLfoFilterDepthCents)
+                filterDepthCents = -MaxLfoFilterDepthCents;
+
+            return new LfoParameters(delay, frequencyHz, pitchDepthCents, volumeDepthCentibels, filterDepthCents);
         }
 
         static float LfoFrequencyCentsToHz(int cents) {

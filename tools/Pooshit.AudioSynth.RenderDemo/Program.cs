@@ -13,15 +13,18 @@ string? soundfontPath = args.Length > 0 ? args[0] : FindDefaultSoundfont();
 if (soundfontPath is null || !File.Exists(soundfontPath)) {
     Console.Error.WriteLine(
         "No SoundFont supplied and the default Florestan test SoundFont was not found in the dev tree. " +
-        "Usage: RenderDemo <soundfont.sf2> [midiNote] [durationSeconds] [out.wav] [vibratoRateHz] [vibratoDepthCents]");
+        "Usage: RenderDemo <soundfont.sf2> [midiNote] [durationSeconds] [out.wav] [lfoRateHz] " +
+        "[vibratoDepthCents] [tremoloDepthCentibels] [filterSweepDepthCents]");
     return 1;
 }
 
 int midiNote = args.Length > 1 ? int.Parse(args[1], CultureInfo.InvariantCulture) : 60;
 double durationSeconds = args.Length > 2 ? double.Parse(args[2], CultureInfo.InvariantCulture) : 2.0;
 string outputPath = args.Length > 3 ? args[3] : "render.wav";
-float vibratoRateHz = args.Length > 4 ? float.Parse(args[4], CultureInfo.InvariantCulture) : 0f;
+float lfoRateHz = args.Length > 4 ? float.Parse(args[4], CultureInfo.InvariantCulture) : 0f;
 float vibratoDepthCents = args.Length > 5 ? float.Parse(args[5], CultureInfo.InvariantCulture) : 0f;
+float tremoloDepthCentibels = args.Length > 6 ? float.Parse(args[6], CultureInfo.InvariantCulture) : 0f;
+float filterSweepDepthCents = args.Length > 7 ? float.Parse(args[7], CultureInfo.InvariantCulture) : 0f;
 
 AudioFormat format = new AudioFormat(SynthesizerOptions.DefaultSampleRate, SynthesizerOptions.DefaultChannels);
 
@@ -36,8 +39,10 @@ if (patches.Count == 0) {
 }
 
 IPatch patch = patches[0];
-if (vibratoDepthCents != 0f && patch is Sf2Patch sf2Patch)
-    patch = new VibratoOverridePatch(sf2Patch, format.SampleRate, vibratoRateHz, vibratoDepthCents);
+bool lfoOverrideRequested = vibratoDepthCents != 0f || tremoloDepthCentibels != 0f || filterSweepDepthCents != 0f;
+if (lfoOverrideRequested && patch is Sf2Patch sf2Patch)
+    patch = new ModLfoOverridePatch(
+        sf2Patch, format.SampleRate, lfoRateHz, vibratoDepthCents, tremoloDepthCentibels, filterSweepDepthCents);
 
 Synthesizer synthesizer = new Synthesizer(new SynthesizerOptions(format.SampleRate, format.Channels), patch);
 

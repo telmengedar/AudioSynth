@@ -36,7 +36,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// <summary>Initial filter resonance (centibels).</summary>
         InitialFilterQ = 9,
 
-        /// <summary>Modulation LFO to filter cutoff frequency (centibels).</summary>
+        /// <summary>Modulation LFO to filter cutoff frequency (cents).</summary>
         ModulationLFOToFilterCutoffFrequency = 10,
 
         /// <summary>Modulation envelope to filter cutoff frequency (centibels).</summary>

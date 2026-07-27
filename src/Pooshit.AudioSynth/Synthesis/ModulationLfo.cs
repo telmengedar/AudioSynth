@@ -10,8 +10,9 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// <see cref="BiquadLowPassFilter"/>; copying it by value loses the in-flight phase.  The triangle
     /// waveform starts at zero rising and needs no transcendental to evaluate, so <see cref="Advance"/>
     /// is a caller-supplied-frame-count multiply/compare step; block size is never an input (INV-1).
-    /// Zero pitch depth is treated as inert (bypass): the phase never advances and the value stays a
-    /// constant zero, matching <see cref="LfoParameters.Default"/>.
+    /// Zero depth on all three routed destinations (pitch, volume, filter cutoff) is treated as inert
+    /// (bypass): the phase never advances and the value stays a constant zero, matching
+    /// <see cref="LfoParameters.Default"/>.
     /// </summary>
     public struct ModulationLfo {
 
@@ -30,7 +31,9 @@ namespace Pooshit.AudioSynth.Synthesis {
             if (sampleRate <= 0)
                 throw new ArgumentOutOfRangeException(nameof(sampleRate));
 
-            bypass = parameters.PitchDepthCents == 0f;
+            bypass = parameters.PitchDepthCents == 0f
+                  && parameters.VolumeDepthCentibels == 0f
+                  && parameters.FilterDepthCents == 0f;
             phaseIncrementPerFrame = bypass ? 0.0 : parameters.FrequencyHz / sampleRate;
             delayFramesRemaining = bypass ? 0 : FramesFromSeconds(parameters.DelaySeconds, sampleRate);
             phase = 0.0;

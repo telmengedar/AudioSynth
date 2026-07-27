@@ -14,7 +14,11 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
     /// <see cref="ControlRateFrames"/> frames and steps the read-position increment's slope (vibrato);
     /// held-then-stepped is exactly how the increment already behaved before the LFO, so a tick never
     /// introduces an amplitude discontinuity (INV-1 by construction) and zero pitch depth reproduces the
-    /// pre-LFO increment bit-for-bit.
+    /// pre-LFO increment bit-for-bit.  Tremolo (LFO to volume) glides its multiplier linearly across each
+    /// control block, since a stepped gain multiplier would itself be an audible click; filter-sweep (LFO
+    /// to cutoff) re-targets the biquad at the control rate via <see cref="BiquadLowPassFilter.SetCutoff"/>,
+    /// which is click-free by construction (state is preserved across the retarget).  Zero depth on all
+    /// three routings reproduces the pre-LFO render bit-for-bit.
     /// </summary>
     public sealed class SamplePlaybackVoice : IVoice {
 
@@ -22,11 +26,14 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
 
         readonly SampleRegion region;
         readonly float pitchIncrement;
+        readonly float baseCutoffHz;
         GainRamp gainRamp;
         AmplitudeEnvelope envelope;
         BiquadLowPassFilter filter;
         ModulationLfo lfo;
         float effectiveIncrement;
+        float tremoloCurrent;
+        float tremoloStep;
         int controlTicksRemaining;
         double readPos;
         bool isActive;
@@ -43,12 +50,15 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         public SamplePlaybackVoice(SampleRegion region, float pitchIncrement, float targetGain, int outputSampleRate) {
             this.region = region ?? throw new ArgumentNullException(nameof(region));
             this.pitchIncrement = pitchIncrement;
+            baseCutoffHz = region.Filter.CutoffHz;
             gainRamp = new GainRamp(outputSampleRate);
             gainRamp.SetTarget(targetGain);
             envelope = new AmplitudeEnvelope(region.Envelope, outputSampleRate);
             filter = new BiquadLowPassFilter(region.Filter, outputSampleRate);
             lfo = new ModulationLfo(region.Lfo, outputSampleRate);
             effectiveIncrement = pitchIncrement;
+            tremoloCurrent = 1f;
+            tremoloStep = 0f;
             controlTicksRemaining = 0;
             readPos = region.Start;
             isActive = true;
@@ -77,11 +87,26 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
                 if (controlTicksRemaining <= 0) {
                     float lfoValue = lfo.Advance(ControlRateFrames);
                     effectiveIncrement = pitchIncrement * (float)Math.Pow(2.0, lfoValue * region.Lfo.PitchDepthCents / 1200.0);
+
+                    if (region.Lfo.VolumeDepthCentibels != 0f) {
+                        float tremoloTarget = (float)Math.Pow(10.0, lfoValue * region.Lfo.VolumeDepthCentibels / 200.0);
+                        tremoloStep = (tremoloTarget - tremoloCurrent) / ControlRateFrames;
+                    } else {
+                        tremoloStep = 0f;
+                        tremoloCurrent = 1f;
+                    }
+
+                    if (region.Lfo.FilterDepthCents != 0f) {
+                        float effectiveCutoff = baseCutoffHz * (float)Math.Pow(2.0, lfoValue * region.Lfo.FilterDepthCents / 1200.0);
+                        filter.SetCutoff(effectiveCutoff);
+                    }
+
                     controlTicksRemaining = ControlRateFrames;
                 }
                 controlTicksRemaining--;
 
-                float gain = envelope.AdvanceFrame() * gainRamp.AdvanceFrame();
+                tremoloCurrent += tremoloStep;
+                float gain = envelope.AdvanceFrame() * gainRamp.AdvanceFrame() * tremoloCurrent;
 
                 float sample;
                 if (sampleExhausted) {
