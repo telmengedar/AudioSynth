@@ -36,3 +36,6 @@ Thumbs.db
 
 # Misc
 *.log
+
+# Local render proof artifacts (large WAVs)
+renders/
