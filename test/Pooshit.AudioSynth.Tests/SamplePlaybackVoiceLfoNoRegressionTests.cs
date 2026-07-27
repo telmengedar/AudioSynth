@@ -6,13 +6,8 @@ using Pooshit.AudioSynth.Synthesis.Voices;
 namespace Pooshit.AudioSynth.Tests {
 
     /// <summary>
-    /// Deliverable proof for the design's bit-identical no-regression invariant: with all three mod-LFO
-    /// depths at zero (<see cref="LfoParameters.Default"/>), <see cref="SamplePlaybackVoice"/> must render
-    /// byte-for-byte identical to the pre-tremolo/sweep (PR-8) pipeline — the tremolo multiplier is a
-    /// structural no-op (<c>x * 1.0f == x</c>) and <see cref="BiquadLowPassFilter.SetCutoff"/> is never
-    /// invoked.  The comparison oracle reconstructs the PR-8 pipeline independently from the same public
-    /// primitives (<see cref="AmplitudeEnvelope"/>, <see cref="GainRamp"/>, <see cref="BiquadLowPassFilter"/>),
-    /// so it does not merely re-run the production code path against itself.
+    /// Deliverable proof that all-depths-zero renders bit-identical to the pre-tremolo/sweep (PR-8)
+    /// pipeline, reconstructed independently from the same public primitives as the comparison oracle.
     /// </summary>
     [TestFixture]
     public class SamplePlaybackVoiceLfoNoRegressionTests {

@@ -4,14 +4,13 @@ using Pooshit.AudioSynth.Audio;
 using Pooshit.AudioSynth.Audio.Sinks;
 using Pooshit.AudioSynth.Synthesis;
 using Pooshit.AudioSynth.Synthesis.Patches;
+using Pooshit.AudioSynth.Synthesis.Voices;
 
 namespace Pooshit.AudioSynth.Tests {
 
     /// <summary>
-    /// Full-path tests that the per-voice mod-LFO modulates the biquad cutoff inside
-    /// <see cref="Pooshit.AudioSynth.Synthesis.Voices.SamplePlaybackVoice"/> (filter-sweep): the
-    /// deliverable proof that high-frequency energy varies periodically at the LFO rate on a filtered
-    /// preset, and the #6272 §B clicks/zipper regression extended to the filter-sweep routing.
+    /// Full-path tests for LFO-to-cutoff (filter-sweep) inside <see cref="SamplePlaybackVoice"/>: the
+    /// HF-energy tracking proof and the #6272 §B zipper regression extended to this routing.
     /// </summary>
     [TestFixture]
     public class SamplePlaybackVoiceFilterSweepTests {

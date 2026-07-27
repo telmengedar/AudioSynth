@@ -55,8 +55,7 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         /// <summary>
         /// Peak filter-cutoff deviation, in cents, applied when the LFO is at full excursion
-        /// (filter-sweep).  Zero means the LFO contributes nothing to the filter cutoff regardless of
-        /// delay or frequency.
+        /// (filter-sweep); zero means the LFO does not affect the cutoff.
         /// </summary>
         public float FilterDepthCents { get; }
 

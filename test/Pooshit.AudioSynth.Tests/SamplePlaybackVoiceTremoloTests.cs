@@ -4,14 +4,13 @@ using Pooshit.AudioSynth.Audio;
 using Pooshit.AudioSynth.Audio.Sinks;
 using Pooshit.AudioSynth.Synthesis;
 using Pooshit.AudioSynth.Synthesis.Patches;
+using Pooshit.AudioSynth.Synthesis.Voices;
 
 namespace Pooshit.AudioSynth.Tests {
 
     /// <summary>
-    /// Full-path tests that the per-voice mod-LFO modulates volume inside
-    /// <see cref="Pooshit.AudioSynth.Synthesis.Voices.SamplePlaybackVoice"/> (tremolo): the deliverable
-    /// tracking proof for the per-sample glide, and the #6272 §B clicks/zipper regression extended to
-    /// the tremolo routing.
+    /// Full-path tests for LFO-to-volume (tremolo) inside <see cref="SamplePlaybackVoice"/>: the
+    /// per-sample glide tracking proof and the #6272 §B zipper regression extended to this routing.
     /// </summary>
     [TestFixture]
     public class SamplePlaybackVoiceTremoloTests {

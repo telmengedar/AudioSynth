@@ -79,9 +79,8 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         /// <summary>
-        /// Re-targets the cutoff to <paramref name="cutoffHz"/>, recomputing coefficients in place while
-        /// preserving <c>state1</c>/<c>state2</c> so the retarget introduces no reset click.  Clamped
-        /// exactly as the constructor clamps, so the recomputed coefficients stay finite (INV-2).
+        /// Re-targets the cutoff to <paramref name="cutoffHz"/>, recomputing coefficients while preserving
+        /// <c>state1</c>/<c>state2</c> so the retarget introduces no click; clamped as the constructor clamps.
         /// </summary>
         /// <param name="cutoffHz">the new low-pass corner frequency in hertz</param>
         public void SetCutoff(float cutoffHz) {
