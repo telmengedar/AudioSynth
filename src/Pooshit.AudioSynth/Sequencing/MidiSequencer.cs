@@ -23,6 +23,15 @@ namespace Pooshit.AudioSynth.Sequencing {
         const int PercussionBank = 128;
         const int DefaultProgram = 0;
 
+        /// <summary>GM-reset default for CC7 (Channel Volume).</summary>
+        const int DefaultChannelVolume = 100;
+
+        /// <summary>GM-reset default for CC11 (Expression).</summary>
+        const int DefaultExpression = 127;
+
+        /// <summary>Full-scale value for a 7-bit MIDI controller.</summary>
+        const int ControllerFullScale = 127;
+
         /// <summary>
         /// Builds the ordered sample-offset schedule for <paramref name="sequence"/>; pure, no audio
         /// touched. Folds a <c>NoteOn</c> with velocity 0 into its <c>NoteOff</c> equivalent.
@@ -63,8 +72,14 @@ namespace Pooshit.AudioSynth.Sequencing {
             if (soundBank is null)
                 throw new ArgumentNullException(nameof(soundBank));
 
-            for (int channel = 0; channel < ChannelCount; channel++)
+            int[] cc7 = new int[ChannelCount];
+            int[] cc11 = new int[ChannelCount];
+            for (int channel = 0; channel < ChannelCount; channel++) {
                 synthesizer.SetChannelPatch(channel, ResolveProgramPatch(soundBank, channel, DefaultProgram));
+                cc7[channel] = DefaultChannelVolume;
+                cc11[channel] = DefaultExpression;
+                synthesizer.SetChannelGain(channel, ChannelGain(cc7[channel], cc11[channel]));
+            }
 
             ScheduledMidiEvent[] schedule = BuildSchedule(sequence, synthesizer.Format.SampleRate);
             long cursor = 0;
@@ -73,7 +88,7 @@ namespace Pooshit.AudioSynth.Sequencing {
                 long gap = scheduled.SampleOffset - cursor;
                 if (gap > 0)
                     cursor += OfflineRenderer.Render(synthesizer, sink, gap);
-                ApplyMessage(scheduled.Message, synthesizer, soundBank);
+                ApplyMessage(scheduled.Message, synthesizer, soundBank, cc7, cc11);
             }
 
             long tailFrames = (long)Math.Round(ReleaseTailSeconds * synthesizer.Format.SampleRate, MidpointRounding.AwayFromZero);
@@ -87,7 +102,7 @@ namespace Pooshit.AudioSynth.Sequencing {
             return message;
         }
 
-        static void ApplyMessage(IMidiMessage message, ISynthesizer synthesizer, SoundBank soundBank) {
+        static void ApplyMessage(IMidiMessage message, ISynthesizer synthesizer, SoundBank soundBank, int[] cc7, int[] cc11) {
             if (!(message is ChannelMessage channel))
                 return;
 
@@ -101,12 +116,34 @@ namespace Pooshit.AudioSynth.Sequencing {
                 case ChannelCommandType.ProgramChange:
                     synthesizer.SetChannelPatch(channel.MidiChannel, ResolveProgramPatch(soundBank, channel.MidiChannel, channel.Data1));
                     break;
+                case ChannelCommandType.Controller:
+                    if (channel.Data1 == (byte)ControllerType.Volume)
+                        cc7[channel.MidiChannel] = channel.Data2;
+                    else if (channel.Data1 == (byte)ControllerType.Expression)
+                        cc11[channel.MidiChannel] = channel.Data2;
+                    else
+                        break;
+                    synthesizer.SetChannelGain(channel.MidiChannel, ChannelGain(cc7[channel.MidiChannel], cc11[channel.MidiChannel]));
+                    break;
             }
         }
 
         static IPatch ResolveProgramPatch(SoundBank soundBank, int channel, int program) {
             int bank = channel == PercussionChannel ? PercussionBank : MelodicBank;
             return soundBank.GetPatch(bank, program);
+        }
+
+        /// <summary>
+        /// Combined linear mix gain for CC7 (Volume) and CC11 (Expression):
+        /// <c>(cc7/127)² · (cc11/127)²</c> (DiVoid #7126 §9).
+        /// </summary>
+        /// <param name="cc7">raw CC7 (Channel Volume) value, 0-127</param>
+        /// <param name="cc11">raw CC11 (Expression) value, 0-127</param>
+        /// <returns>linear gain in [0,1]; 1.0 when both controllers are at full scale</returns>
+        static float ChannelGain(int cc7, int cc11) {
+            float volume = cc7 / (float)ControllerFullScale;
+            float expression = cc11 / (float)ControllerFullScale;
+            return volume * volume * expression * expression;
         }
     }
 }

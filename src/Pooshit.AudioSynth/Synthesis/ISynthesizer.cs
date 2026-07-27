@@ -21,5 +21,10 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// Sets the current patch for a channel; only future <see cref="NoteOn"/> calls on it are affected.
         /// </summary>
         void SetChannelPatch(int channel, IPatch patch);
+
+        /// <summary>
+        /// Sets a channel's mix gain, glided rather than stepped; mirrors <see cref="SetChannelPatch"/>.
+        /// </summary>
+        void SetChannelGain(int channel, float gain);
     }
 }
