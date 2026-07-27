@@ -21,6 +21,9 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         public void SetPitchBend(float pitchFactor) { }
 
         /// <inheritdoc/>
+        public float Pan => 0f;
+
+        /// <inheritdoc/>
         public int RenderBlock(Span<float> block) {
             for (int i = 0; i < block.Length; i++) {
                 switch (i % 3) {

@@ -47,7 +47,7 @@ namespace Pooshit.AudioSynth.Tests {
             for (int i = 0; i < length; i++)
                 buf[i] = i * scale;
             return new SampleRegion(buf, 0, length, 0, length, LoopMode.NoLoop, SampleRate, 60, 0,
-                InstantSustainEnvelope, FilterParameters.Default, LfoParameters.Default);
+                InstantSustainEnvelope, FilterParameters.Default, LfoParameters.Default, 0f);
         }
 
         static SoundBank SingleRampPresetBank(SampleRegion region) {

@@ -57,7 +57,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// <summary>Reverb effects send (0.1% units).</summary>
         ReverbEffectsSend = 16,
 
-        /// <summary>Panorama position (0.1% units, -50=left, +50=right).</summary>
+        /// <summary>Panorama position (0.1% units, -500=left, +500=right, per SF2 2.04 §8.1.3).</summary>
         Pan = 17,
 
         /// <summary>Unused 2.</summary>

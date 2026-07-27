@@ -85,6 +85,9 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         }
 
         /// <inheritdoc/>
+        public float Pan => region.Pan;
+
+        /// <inheritdoc/>
         public int RenderBlock(Span<float> block) {
             if (!isActive) {
                 block.Clear();

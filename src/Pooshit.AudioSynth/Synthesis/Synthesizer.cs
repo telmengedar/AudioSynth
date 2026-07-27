@@ -5,7 +5,9 @@ namespace Pooshit.AudioSynth.Synthesis {
 
     /// <summary>
     /// Pull-based voice engine that implements <see cref="ISynthesizer"/>; turns MIDI-style note events
-    /// into voices, renders them in fixed-size internal blocks, mixes with equal-power centre pan and a
+    /// into voices, renders them in fixed-size internal blocks, mixes each voice into real stereo
+    /// placement via per-voice equal-power L/R gains (combining the channel's dynamic pan with the
+    /// voice's static SF2 pan; non-stereo output collapses to the legacy centre <c>panGain</c>) and a
     /// zipper-free per-channel mix gain through a master soft-clip stage, then a single NaN/Inf-safe
     /// finalize choke point (INV-2). Holds a per-channel pitch-bend factor that fans out to the channel's
     /// sounding voices and is inherited by notes started while a bend is active; a centered channel
@@ -22,11 +24,21 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// </summary>
         const float MasterBusKneeThreshold = 0.9f;
 
+        /// <summary>Output channel count for which per-voice equal-power stereo placement applies.</summary>
+        const int StereoChannelCount = 2;
+
+        /// <summary>
+        /// Quarter-turn used by <see cref="EqualPowerGains"/> to map pan ∈ [-1,1] onto the quarter-circle
+        /// of constant-power L/R gains.
+        /// </summary>
+        const double PanQuarterTurn = Math.PI / 4.0;
+
         readonly SynthesizerOptions options;
         readonly IPatch[] channelPatch;
         readonly GainRamp[] channelGain;
         readonly float[] channelGainBlock;
         readonly float[] channelBendFactor;
+        readonly float[] channelPan;
         readonly VoiceSlot[] pool;
         readonly float[] scratch;
         readonly float[] master;
@@ -54,6 +66,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             channelBendFactor = new float[ChannelCount];
             for (int i = 0; i < channelBendFactor.Length; i++)
                 channelBendFactor[i] = 1f;
+            channelPan = new float[ChannelCount];
             pool = new VoiceSlot[options.MaxVoices];
             scratch = new float[options.BlockFrames];
             master = new float[options.BlockFrames * options.Channels];
@@ -93,6 +106,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         /// <inheritdoc/>
+        public void SetChannelPan(int channel, float pan) {
+            if (channel < 0 || channel >= ChannelCount)
+                throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
+            channelPan[channel] = pan;
+        }
+
+        /// <inheritdoc/>
         public void NoteOn(int channel, int key, int velocity) {
             if (channel < 0 || channel >= ChannelCount)
                 throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
@@ -127,6 +147,7 @@ namespace Pooshit.AudioSynth.Synthesis {
                     nameof(destination));
 
             int channels = options.Channels;
+            bool isStereo = channels == StereoChannelCount;
             int blockFrames = options.BlockFrames;
             int totalSamples = destination.Length;
             int written = 0;
@@ -154,11 +175,24 @@ namespace Pooshit.AudioSynth.Synthesis {
                     slot.Voice!.RenderBlock(scratchSlice);
 
                     int channelBase = slot.Channel * options.BlockFrames;
-                    for (int frame = 0; frame < frames; frame++) {
-                        float mixed = scratchSlice[frame] * channelGainBlock[channelBase + frame] * panGain;
-                        int baseIndex = frame * channels;
-                        for (int ch = 0; ch < channels; ch++)
-                            masterSlice[baseIndex + ch] += mixed;
+
+                    if (isStereo) {
+                        float combinedPan = Clamp(channelPan[slot.Channel] + slot.Voice.Pan, -1f, 1f);
+                        EqualPowerGains(combinedPan, out float leftGain, out float rightGain);
+
+                        for (int frame = 0; frame < frames; frame++) {
+                            float pre = scratchSlice[frame] * channelGainBlock[channelBase + frame];
+                            int baseIndex = frame * channels;
+                            masterSlice[baseIndex] += pre * leftGain;
+                            masterSlice[baseIndex + 1] += pre * rightGain;
+                        }
+                    } else {
+                        for (int frame = 0; frame < frames; frame++) {
+                            float mixed = scratchSlice[frame] * channelGainBlock[channelBase + frame] * panGain;
+                            int baseIndex = frame * channels;
+                            for (int ch = 0; ch < channels; ch++)
+                                masterSlice[baseIndex + ch] += mixed;
+                        }
                     }
 
                     if (!slot.Voice.IsActive) {
@@ -196,6 +230,28 @@ namespace Pooshit.AudioSynth.Synthesis {
                     return i;
             }
             return -1;
+        }
+
+        /// <summary>
+        /// Maps a combined pan position ∈ [-1,1] onto constant-power left/right gains via a quarter-circle
+        /// rotation (<c>θ = (pan+1)·π/4</c>, <c>left = cos θ</c>, <c>right = sin θ</c>), so
+        /// <c>left² + right² = 1</c> at every position. Private: the engine is this law's sole consumer.
+        /// </summary>
+        /// <param name="pan">combined channel+voice pan, already clamped to [-1,1]</param>
+        /// <param name="left">the resulting left-channel gain</param>
+        /// <param name="right">the resulting right-channel gain</param>
+        static void EqualPowerGains(float pan, out float left, out float right) {
+            double theta = (pan + 1.0) * PanQuarterTurn;
+            left = (float)Math.Cos(theta);
+            right = (float)Math.Sin(theta);
+        }
+
+        static float Clamp(float value, float min, float max) {
+            if (value < min)
+                return min;
+            if (value > max)
+                return max;
+            return value;
         }
 
         /// <summary>

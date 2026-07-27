@@ -27,6 +27,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const float MaxLfoFrequencyHz = 20f;
         const int MaxLfoVolumeDepthCentibels = 960;
         const int MaxLfoFilterDepthCents = 12000;
+        const int MaxPanUnits = 500;
+        const float PanUnitsDivisor = 500f;
 
         readonly Sf2PresetHeader preset;
         readonly Sf2Instrument[] instruments;
@@ -197,6 +199,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             EnvelopeParameters envelope = BuildEnvelopeParameters(zone, globalZone);
             FilterParameters filter = BuildFilterParameters(zone, globalZone);
             LfoParameters lfo = BuildLfoParameters(zone, globalZone);
+            float pan = BuildPan(zone, globalZone);
 
             return new SampleRegion(
                 floatPool,
@@ -210,7 +213,21 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 pitchCorrectionCents,
                 envelope,
                 filter,
-                lfo);
+                lfo,
+                pan);
+        }
+
+        /// <summary>
+        /// Reads generator 17 (Pan) and normalises its SF2-spec ±500 raw range to [-1,1]; absent or
+        /// out-of-range raw values default to/clamp toward centre (0).
+        /// </summary>
+        static float BuildPan(Sf2Zone zone, Sf2Zone? globalZone) {
+            int raw = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.Pan, defaultValue: 0);
+            if (raw > MaxPanUnits)
+                raw = MaxPanUnits;
+            if (raw < -MaxPanUnits)
+                raw = -MaxPanUnits;
+            return raw / PanUnitsDivisor;
         }
 
         static FilterParameters BuildFilterParameters(Sf2Zone zone, Sf2Zone? globalZone) {

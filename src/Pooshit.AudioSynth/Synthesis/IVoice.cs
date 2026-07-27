@@ -27,5 +27,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// voice's read-position increment (1.0 = no bend).
         /// </summary>
         void SetPitchBend(float pitchFactor);
+
+        /// <summary>
+        /// The voice's static stereo position in [-1,1] (-1 = full left, 0 = centre, +1 = full right),
+        /// immutable for the voice's lifetime; combined with the channel's dynamic pan at mix time.
+        /// </summary>
+        float Pan { get; }
     }
 }

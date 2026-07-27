@@ -32,6 +32,9 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// <summary>Full-scale value for a 7-bit MIDI controller.</summary>
         const int ControllerFullScale = 127;
 
+        /// <summary>The centered (no-pan) 7-bit CC10 (Pan) value.</summary>
+        const int PanControllerCenter = 64;
+
         /// <summary>GM default pitch-bend range, in semitones, applied symmetrically around center.</summary>
         const float PitchBendSemitoneRange = 2f;
 
@@ -88,6 +91,7 @@ namespace Pooshit.AudioSynth.Sequencing {
                 cc7[channel] = DefaultChannelVolume;
                 cc11[channel] = DefaultExpression;
                 synthesizer.SetChannelGain(channel, ChannelGain(cc7[channel], cc11[channel]));
+                synthesizer.SetChannelPan(channel, 0f);
             }
 
             ScheduledMidiEvent[] schedule = BuildSchedule(sequence, synthesizer.Format.SampleRate);
@@ -126,6 +130,10 @@ namespace Pooshit.AudioSynth.Sequencing {
                     synthesizer.SetChannelPatch(channel.MidiChannel, ResolveProgramPatch(soundBank, channel.MidiChannel, channel.Data1));
                     break;
                 case ChannelCommandType.Controller:
+                    if (channel.Data1 == (byte)ControllerType.Pan) {
+                        synthesizer.SetChannelPan(channel.MidiChannel, ControllerToPan(channel.Data2));
+                        break;
+                    }
                     if (channel.Data1 == (byte)ControllerType.Volume)
                         cc7[channel.MidiChannel] = channel.Data2;
                     else if (channel.Data1 == (byte)ControllerType.Expression)
@@ -158,6 +166,22 @@ namespace Pooshit.AudioSynth.Sequencing {
             float volume = cc7 / (float)ControllerFullScale;
             float expression = cc11 / (float)ControllerFullScale;
             return volume * volume * expression * expression;
+        }
+
+        /// <summary>
+        /// Maps a raw CC10 (Pan) value (0-127) to a signed engine pan ∈ [-1,1]: 0 → -1 (full left),
+        /// 64 → 0 (centre), 127 → +0.984 (≈ full right; the symmetric divisor leaves the top rail
+        /// slightly short, inaudible under equal-power placement).
+        /// </summary>
+        /// <param name="value">raw CC10 value, 0-127</param>
+        /// <returns>signed pan in [-1,1]</returns>
+        static float ControllerToPan(int value) {
+            float pan = (value - PanControllerCenter) / (float)PanControllerCenter;
+            if (pan < -1f)
+                pan = -1f;
+            if (pan > 1f)
+                pan = 1f;
+            return pan;
         }
     }
 }

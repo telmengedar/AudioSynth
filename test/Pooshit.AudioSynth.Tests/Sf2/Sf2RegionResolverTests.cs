@@ -642,5 +642,74 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(region!.Lfo.FilterDepthCents, Is.EqualTo(-12000f),
                 "-20000-cent depth must clamp to the -12000-cent stability cap.");
         }
+
+        [Test]
+        [Description("Absent Pan(17) generator defaults to centre (0).")]
+        public void TryResolve_NoPanGenerator_DefaultsToCentre() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(0f),
+                "Absent Pan(17) generator must default to centre (0).");
+        }
+
+        [Test]
+        [Description("Pan(17)=-500 (SF2-spec full left) normalises to -1.")]
+        public void TryResolve_PanMinus500_NormalisesToFullLeft() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.Pan, unchecked((ushort)(short)-500)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(-1f),
+                "Pan raw=-500 (SF2-spec full left) must normalise to -1.");
+        }
+
+        [Test]
+        [Description("Pan(17)=+250 (SF2-spec half right) normalises to +0.5.")]
+        public void TryResolve_PanPlus250_NormalisesToHalfRight() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.Pan, 250));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(0.5f).Within(1e-6f),
+                "Pan raw=+250 must normalise to +0.5 (raw/500).");
+        }
+
+        [Test]
+        [Description("A Pan(17) raw amount beyond the SF2-spec ±500 range is clamped before normalisation.")]
+        public void TryResolve_PanBeyondSpecRange_IsClamped() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.Pan, unchecked((ushort)(short)-32768)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(-1f),
+                "A raw amount far below -500 must clamp to -500 before normalising, yielding -1.");
+        }
+
+        [Test]
+        [Description("Local zone Pan(17) generator overrides the global instrument zone's value.")]
+        public void TryResolve_LocalPanOverridesGlobal() {
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.Pan, unchecked((ushort)(short)-500)));
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.Pan, 500));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { globalZone, localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(1f),
+                "local Pan=+500 must override global Pan=-500.");
+        }
     }
 }

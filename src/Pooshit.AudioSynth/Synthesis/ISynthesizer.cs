@@ -33,5 +33,12 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <see cref="NoteOn"/> calls on the same channel. MIDI-neutral: mirrors <see cref="SetChannelGain"/>.
         /// </summary>
         void SetChannelPitchBend(int channel, float semitones);
+
+        /// <summary>
+        /// Sets a channel's stereo pan position, a signed value where -1 = full left, 0 = centre, and
+        /// +1 = full right; applies to the channel's currently-sounding and future voices, read live
+        /// each block rather than captured at note-on. MIDI-neutral: mirrors <see cref="SetChannelGain"/>.
+        /// </summary>
+        void SetChannelPan(int channel, float pan);
     }
 }
