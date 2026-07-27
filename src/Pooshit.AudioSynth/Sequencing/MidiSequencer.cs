@@ -38,6 +38,12 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// <summary>GM1 default for CC91 (Effects 1 Depth / reverb send).</summary>
         const int DefaultReverbSend = 40;
 
+        /// <summary>
+        /// CC64 (Hold Pedal 1 / sustain) threshold: a raw value at or above this is "pedal down"
+        /// (MIDI convention), below it is "pedal up".
+        /// </summary>
+        const int SustainPedalThreshold = 64;
+
         /// <summary>GM default pitch-bend range, in semitones, applied symmetrically around center.</summary>
         const float PitchBendSemitoneRange = 2f;
 
@@ -140,6 +146,10 @@ namespace Pooshit.AudioSynth.Sequencing {
                     }
                     if (channel.Data1 == (byte)ControllerType.EffectsLevel) {
                         synthesizer.SetChannelReverbSend(channel.MidiChannel, channel.Data2 / (float)ControllerFullScale);
+                        break;
+                    }
+                    if (channel.Data1 == (byte)ControllerType.HoldPedal1) {
+                        synthesizer.SetChannelSustain(channel.MidiChannel, channel.Data2 >= SustainPedalThreshold);
                         break;
                     }
                     if (channel.Data1 == (byte)ControllerType.Volume)

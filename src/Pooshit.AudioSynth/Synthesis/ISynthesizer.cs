@@ -48,5 +48,14 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <see cref="IVoice.ReverbSend"/>. MIDI-neutral: mirrors <see cref="SetChannelPan"/>.
         /// </summary>
         void SetChannelReverbSend(int channel, float level);
+
+        /// <summary>
+        /// Sets a channel's sustain (hold) pedal state, typically driven by MIDI CC64. While held,
+        /// a <see cref="NoteOff"/> on the channel defers the voice's release instead of releasing it
+        /// immediately; when disengaged, every voice on the channel deferred since the pedal went down
+        /// releases into its envelope tail. A note that never received a <see cref="NoteOff"/> is
+        /// unaffected by disengaging the pedal. MIDI-neutral: mirrors <see cref="SetChannelPan"/>.
+        /// </summary>
+        void SetChannelSustain(int channel, bool held);
     }
 }

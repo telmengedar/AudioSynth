@@ -18,8 +18,12 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// (every voice sends fully), reproducing the pre-send-bus uniform master-insert bit-for-bit. Holds a
     /// per-channel pitch-bend factor that fans out to the channel's sounding voices and is inherited by
     /// notes started while a bend is active; a centered channel (1.0) leaves every voice's increment
-    /// bit-for-bit unchanged (INV-3). All buffers, including the reverb's delay lines and the send bus,
-    /// are ctor-sized; steady-state <see cref="Read"/> allocates nothing.
+    /// bit-for-bit unchanged (INV-3). Also holds a per-channel sustain-pedal state (CC64): while held, a
+    /// <see cref="NoteOff"/> on the channel marks the matching <see cref="VoiceSlot.PendingRelease"/>
+    /// instead of releasing the voice, and disengaging the pedal sweeps the pool releasing every deferred
+    /// voice on that channel; a channel that never sustains takes the unchanged immediate-release path
+    /// bit-for-bit. All buffers, including the reverb's delay lines and the send bus, are ctor-sized;
+    /// steady-state <see cref="Read"/> allocates nothing.
     /// </summary>
     public sealed class Synthesizer : ISynthesizer {
 
@@ -47,6 +51,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         readonly float[] channelBendFactor;
         readonly float[] channelPan;
         readonly float[] channelReverbSend;
+        readonly bool[] channelSustain;
         readonly VoiceSlot[] pool;
         readonly float[] scratch;
         readonly float[] master;
@@ -79,6 +84,7 @@ namespace Pooshit.AudioSynth.Synthesis {
                 channelBendFactor[i] = 1f;
             channelPan = new float[ChannelCount];
             channelReverbSend = new float[ChannelCount];
+            channelSustain = new bool[ChannelCount];
             pool = new VoiceSlot[options.MaxVoices];
             scratch = new float[options.BlockFrames];
             master = new float[options.BlockFrames * options.Channels];
@@ -137,6 +143,24 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         /// <inheritdoc/>
+        public void SetChannelSustain(int channel, bool held) {
+            if (channel < 0 || channel >= ChannelCount)
+                throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
+
+            channelSustain[channel] = held;
+            if (held)
+                return;
+
+            for (int i = 0; i < pool.Length; i++) {
+                ref VoiceSlot slot = ref pool[i];
+                if (slot.IsOccupied && slot.Channel == channel && slot.PendingRelease) {
+                    slot.Voice!.Release();
+                    slot.PendingRelease = false;
+                }
+            }
+        }
+
+        /// <inheritdoc/>
         public void NoteOn(int channel, int key, int velocity) {
             if (channel < 0 || channel >= ChannelCount)
                 throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
@@ -152,14 +176,20 @@ namespace Pooshit.AudioSynth.Synthesis {
             slot.Channel = channel;
             slot.Key = key;
             slot.Voice = voice;
+            slot.PendingRelease = false;
         }
 
         /// <inheritdoc/>
         public void NoteOff(int channel, int key) {
+            bool sustained = channelSustain[channel];
             for (int i = 0; i < pool.Length; i++) {
                 ref VoiceSlot slot = ref pool[i];
-                if (slot.IsOccupied && slot.Channel == channel && slot.Key == key)
-                    slot.Voice!.Release();
+                if (slot.IsOccupied && slot.Channel == channel && slot.Key == key) {
+                    if (sustained)
+                        slot.PendingRelease = true;
+                    else
+                        slot.Voice!.Release();
+                }
             }
         }
 
