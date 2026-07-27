@@ -111,5 +111,66 @@ namespace Pooshit.AudioSynth.Tests {
             Array.Copy(samples, from, result, 0, result.Length);
             return result;
         }
+
+        [Test]
+        [Description("SetCutoff preserves filter state across a retarget: feeding a constant before and after " +
+            "the retarget produces no output jump (design §8: state1/state2 continuity, no reset click).")]
+        public void SetCutoff_PreservesState_NoJumpOnConstantInput() {
+            BiquadLowPassFilter filter = new BiquadLowPassFilter(
+                new FilterParameters(2000f, FilterParameters.ButterworthResonance), SampleRate);
+
+            float lastBeforeRetarget = 0f;
+            for (int i = 0; i < 200; i++)
+                lastBeforeRetarget = filter.Process(0.5f);
+
+            filter.SetCutoff(600f);
+
+            float firstAfterRetarget = filter.Process(0.5f);
+
+            Assert.That(Math.Abs(firstAfterRetarget - lastBeforeRetarget), Is.LessThan(0.05f),
+                $"SetCutoff introduced a jump: {lastBeforeRetarget} -> {firstAfterRetarget}.");
+        }
+
+        [Test]
+        [Description("After SetCutoff the filter behaves at the new cutoff: a high tone that passed at the old " +
+            "(high) cutoff is attenuated once swept to a low cutoff.")]
+        public void SetCutoff_ChangesTransferFunction_ToNewCutoff() {
+            BiquadLowPassFilter filter = new BiquadLowPassFilter(
+                new FilterParameters(10000f, FilterParameters.ButterworthResonance), SampleRate);
+
+            float[] tone = Tone(8000f, SampleRate, SampleRate);
+            float[] beforeSweep = new float[2000];
+            for (int i = 0; i < beforeSweep.Length; i++)
+                beforeSweep[i] = filter.Process(tone[i]);
+
+            filter.SetCutoff(300f);
+
+            float[] afterSweep = new float[2000];
+            for (int i = 0; i < afterSweep.Length; i++)
+                afterSweep[i] = filter.Process(tone[beforeSweep.Length + i]);
+
+            float rmsBefore = Rms(Slice(beforeSweep, 1000));
+            float rmsAfter = Rms(Slice(afterSweep, 1000));
+
+            Assert.That(rmsAfter, Is.LessThan(rmsBefore * 0.2f),
+                $"sweeping to a low cutoff must attenuate the 8 kHz tone; before={rmsBefore}, after={rmsAfter}.");
+        }
+
+        [Test]
+        [Description("SetCutoff clamps exactly as the constructor does, so finite output is preserved (INV-2) " +
+            "even when swept to an extreme cutoff.")]
+        public void SetCutoff_ExtremeCutoff_ProducesFiniteOutput() {
+            BiquadLowPassFilter filter = new BiquadLowPassFilter(
+                new FilterParameters(1000f, FilterParameters.ButterworthResonance), SampleRate);
+
+            filter.SetCutoff(1_000_000f);
+
+            float[] input = Tone(60f, 4000, SampleRate);
+            foreach (float sample in input) {
+                float output = filter.Process(sample);
+                Assert.That(float.IsNaN(output), Is.False, "swept filter produced NaN.");
+                Assert.That(float.IsInfinity(output), Is.False, "swept filter produced infinity.");
+            }
+        }
     }
 }

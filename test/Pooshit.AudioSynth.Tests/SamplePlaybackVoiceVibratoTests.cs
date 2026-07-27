@@ -59,7 +59,7 @@ namespace Pooshit.AudioSynth.Tests {
             const int ticksToRender = 12;
             const int firstCheckedTick = 5;
 
-            LfoParameters lfoParameters = new LfoParameters(0f, 5f, depthCents);
+            LfoParameters lfoParameters = new LfoParameters(0f, 5f, depthCents, 0f, 0f);
             SampleRegion region = BuildRampRegion(lfoParameters, scale, 1200);
             float[] output = Render(region, ControlRateFrames * ticksToRender);
 
@@ -99,7 +99,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Regression for defect catalog #6272 §B (clicks/zipper class): a control-rate tick introduces no amplitude discontinuity, even under strong vibrato.")]
         public void ControlTick_IntroducesNoAmplitudeDiscontinuity() {
-            LfoParameters lfo = new LfoParameters(0f, 7f, 1200f);
+            LfoParameters lfo = new LfoParameters(0f, 7f, 1200f, 0f, 0f);
             SampleRegion region = BuildToneRegion(200f, lfo, 8 * SampleRate);
             float[] samples = Render(region, SampleRate);
 

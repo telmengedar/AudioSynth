@@ -26,7 +26,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("The LFO value stays zero for every frame spent inside the delay.")]
         public void Delay_HoldsZeroBeforeOscillationBegins() {
-            LfoParameters parameters = new LfoParameters(0.01f, 5f, 100f);
+            LfoParameters parameters = new LfoParameters(0.01f, 5f, 100f, 0f, 0f);
             ModulationLfo lfo = new ModulationLfo(parameters, SampleRate);
 
             int delayFrames = (int)(0.01f * SampleRate);
@@ -38,7 +38,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Once the delay elapses the LFO produces a non-zero, bounded bipolar value.")]
         public void AfterDelay_ProducesBoundedBipolarValue() {
-            LfoParameters parameters = new LfoParameters(0f, 5f, 100f);
+            LfoParameters parameters = new LfoParameters(0f, 5f, 100f, 0f, 0f);
             ModulationLfo lfo = new ModulationLfo(parameters, SampleRate);
 
             float value = lfo.Advance(SampleRate / 20);
@@ -50,7 +50,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("The waveform starts at zero and rises, giving a click-free vibrato onset.")]
         public void Oscillation_StartsAtZeroRising() {
-            LfoParameters parameters = new LfoParameters(0f, 5f, 100f);
+            LfoParameters parameters = new LfoParameters(0f, 5f, 100f, 0f, 0f);
             ModulationLfo lfo = new ModulationLfo(parameters, SampleRate);
 
             float early = lfo.Advance(1);
@@ -64,7 +64,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Description("The signal is periodic at the configured frequency: one full period returns to the same value.")]
         public void Oscillation_IsPeriodicAtConfiguredFrequency() {
             const float frequencyHz = 5f;
-            LfoParameters parameters = new LfoParameters(0f, frequencyHz, 100f);
+            LfoParameters parameters = new LfoParameters(0f, frequencyHz, 100f, 0f, 0f);
             ModulationLfo lfo = new ModulationLfo(parameters, SampleRate);
 
             int periodFrames = (int)(SampleRate / frequencyHz);
@@ -79,7 +79,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Description("Reaches the +1 peak a quarter period after onset and the -1 trough three-quarters in.")]
         public void Oscillation_ReachesPeakAndTrough() {
             const float frequencyHz = 10f;
-            LfoParameters parameters = new LfoParameters(0f, frequencyHz, 100f);
+            LfoParameters parameters = new LfoParameters(0f, frequencyHz, 100f, 0f, 0f);
             ModulationLfo lfo = new ModulationLfo(parameters, SampleRate);
 
             int periodFrames = (int)(SampleRate / frequencyHz);
@@ -94,7 +94,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Description("Regression for defect catalog #6272 §B (#6214): phase stays bounded over a long note, keeping the vibrato period stable with no drift.")]
         public void LongRunningNote_PhaseStaysBounded_PeriodRemainsStable() {
             const float frequencyHz = 5f;
-            LfoParameters parameters = new LfoParameters(0f, frequencyHz, 100f);
+            LfoParameters parameters = new LfoParameters(0f, frequencyHz, 100f, 0f, 0f);
             ModulationLfo lfo = new ModulationLfo(parameters, SampleRate);
 
             int periodFrames = (int)(SampleRate / frequencyHz);
@@ -117,6 +117,40 @@ namespace Pooshit.AudioSynth.Tests {
         [Description("A non-positive sample rate is rejected.")]
         public void Constructor_NonPositiveSampleRate_Throws() {
             Assert.Throws<ArgumentOutOfRangeException>(() => new ModulationLfo(LfoParameters.Default, 0));
+        }
+
+        [Test]
+        [Description("Load-bearing correctness fix (design lfo-tremolo-sweep §5.2): a tremolo-only preset " +
+            "(zero pitch depth, nonzero volume depth) must not be treated as inert; the bypass condition " +
+            "widens to all-three-depths-zero, so this LFO still produces nonzero values.")]
+        public void VolumeOnlyDepth_IsNotBypassed_ProducesNonzeroValues() {
+            LfoParameters parameters = new LfoParameters(0f, 5f, 0f, 200f, 0f);
+            ModulationLfo lfo = new ModulationLfo(parameters, SampleRate);
+
+            float value = lfo.Advance(SampleRate / 20);
+
+            Assert.That(value, Is.Not.EqualTo(0f),
+                "a volume-only depth LFO must not be bypassed; pitch-only bypass would silently mute tremolo.");
+        }
+
+        [Test]
+        [Description("A filter-only preset (zero pitch and volume depth, nonzero filter depth) must also not be bypassed.")]
+        public void FilterOnlyDepth_IsNotBypassed_ProducesNonzeroValues() {
+            LfoParameters parameters = new LfoParameters(0f, 5f, 0f, 0f, 1200f);
+            ModulationLfo lfo = new ModulationLfo(parameters, SampleRate);
+
+            float value = lfo.Advance(SampleRate / 20);
+
+            Assert.That(value, Is.Not.EqualTo(0f),
+                "a filter-only depth LFO must not be bypassed; pitch-only bypass would silently mute the sweep.");
+        }
+
+        [Test]
+        [Description("All three depths zero is the only inert case; LfoParameters.Default must still bypass.")]
+        public void AllDepthsZero_DefaultParameters_IsBypassed() {
+            ModulationLfo lfo = new ModulationLfo(LfoParameters.Default, SampleRate);
+
+            Assert.That(lfo.Advance(SampleRate / 20), Is.EqualTo(0f));
         }
     }
 }
