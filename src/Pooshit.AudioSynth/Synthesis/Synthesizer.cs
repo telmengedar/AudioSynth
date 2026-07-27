@@ -7,12 +7,14 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// Pull-based voice engine that implements <see cref="ISynthesizer"/>; turns MIDI-style note events
     /// into voices, renders them in fixed-size internal blocks, mixes each voice into real stereo
     /// placement via per-voice equal-power L/R gains (combining the channel's dynamic pan with the
-    /// voice's static SF2 pan; non-stereo output collapses to the legacy centre <c>panGain</c>) and a
-    /// zipper-free per-channel mix gain through a master soft-clip stage, then a single NaN/Inf-safe
-    /// finalize choke point (INV-2). Holds a per-channel pitch-bend factor that fans out to the channel's
-    /// sounding voices and is inherited by notes started while a bend is active; a centered channel
-    /// (1.0) leaves every voice's increment bit-for-bit unchanged (INV-3). All buffers are ctor-sized;
-    /// steady-state <see cref="Read"/> allocates nothing.
+    /// voice's static SF2 pan; non-stereo output collapses to the legacy centre <c>panGain</c>), then an
+    /// optional master <see cref="Reverb"/> insert (present only when <see cref="SynthesizerOptions.Reverb"/>
+    /// is configured and output is stereo; absent, it leaves the master path bit-for-bit unchanged), a
+    /// master soft-clip stage, then a single NaN/Inf-safe finalize choke point (INV-2). Holds a per-channel
+    /// pitch-bend factor that fans out to the channel's sounding voices and is inherited by notes started
+    /// while a bend is active; a centered channel (1.0) leaves every voice's increment bit-for-bit
+    /// unchanged (INV-3). All buffers, including the reverb's delay lines, are ctor-sized; steady-state
+    /// <see cref="Read"/> allocates nothing.
     /// </summary>
     public sealed class Synthesizer : ISynthesizer {
 
@@ -43,6 +45,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         readonly float[] scratch;
         readonly float[] master;
         readonly float panGain;
+        readonly Reverb? reverb;
 
         /// <summary>
         /// Creates a <see cref="Synthesizer"/> with the given options; <paramref name="defaultPatch"/> fills
@@ -71,6 +74,9 @@ namespace Pooshit.AudioSynth.Synthesis {
             scratch = new float[options.BlockFrames];
             master = new float[options.BlockFrames * options.Channels];
             panGain = (float)(1.0 / Math.Sqrt(options.Channels));
+            reverb = options.Reverb != null && options.Channels == StereoChannelCount
+                ? new Reverb(options.Reverb, options.SampleRate)
+                : null;
         }
 
         /// <inheritdoc/>
@@ -200,6 +206,8 @@ namespace Pooshit.AudioSynth.Synthesis {
                         slot.Voice = null;
                     }
                 }
+
+                reverb?.Process(masterSlice);
 
                 ApplyMasterBus(masterSlice);
                 Finalize(masterSlice);

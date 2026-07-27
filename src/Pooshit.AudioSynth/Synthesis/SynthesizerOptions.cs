@@ -34,11 +34,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <param name="channels">interleaved channel count; must be positive</param>
         /// <param name="blockFrames">internal render block size in frames; must be positive</param>
         /// <param name="maxVoices">maximum simultaneous voices; must be positive</param>
+        /// <param name="reverb">master-bus reverb settings; <c>null</c> (the default) leaves the master path dry</param>
         public SynthesizerOptions(
             int sampleRate = DefaultSampleRate,
             int channels = DefaultChannels,
             int blockFrames = DefaultBlockFrames,
-            int maxVoices = DefaultMaxVoices) {
+            int maxVoices = DefaultMaxVoices,
+            ReverbSettings? reverb = null) {
             if (sampleRate <= 0)
                 throw new ArgumentOutOfRangeException(nameof(sampleRate), sampleRate, "Sample rate must be positive.");
             if (channels <= 0)
@@ -51,6 +53,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             Channels = channels;
             BlockFrames = blockFrames;
             MaxVoices = maxVoices;
+            Reverb = reverb;
         }
 
         /// <summary>
@@ -72,5 +75,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// Maximum number of simultaneous voices; new notes are dropped when the pool is full.
         /// </summary>
         public int MaxVoices { get; }
+
+        /// <summary>
+        /// Master-bus reverb settings; <c>null</c> (the default) means no reverb is constructed and the
+        /// master path is unchanged. Only takes effect when <see cref="Channels"/> equals 2 (stereo).
+        /// </summary>
+        public ReverbSettings? Reverb { get; }
     }
 }
