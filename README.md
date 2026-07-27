@@ -35,6 +35,10 @@ The original code is used as reference only and is not incorporated. Pooshit.Aud
 likewise MIT licensed; see [LICENSE](LICENSE), which reproduces the original copyright
 notice in acknowledgement.
 
+The MIDI message model in `Formats/Midi/` is derived from **Leslie Sanford's C# MIDI
+Toolkit** (public domain / MIT); the parser and sequencing driver around it are original to
+this project.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
