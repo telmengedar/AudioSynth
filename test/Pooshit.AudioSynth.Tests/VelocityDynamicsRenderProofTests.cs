@@ -26,7 +26,7 @@ namespace Pooshit.AudioSynth.Tests {
             for (int i = 0; i < length; i++)
                 buffer[i] = DcValue;
             return new SampleRegion(buffer, 0, length, 0, length, LoopMode.Continuous, SampleRate, 60, 0,
-                EnvelopeParameters.Default, FilterParameters.Default, LfoParameters.Default);
+                EnvelopeParameters.Default, FilterParameters.Default, LfoParameters.Default, 0f);
         }
 
         static float SteadyStatePeak(int velocity) {

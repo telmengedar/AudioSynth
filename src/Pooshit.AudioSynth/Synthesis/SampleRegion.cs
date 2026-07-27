@@ -23,6 +23,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <param name="envelope">volume-envelope parameters shaping this region's amplitude over the note's life</param>
         /// <param name="filter">low-pass filter parameters shaping this region's timbre before the amplifier</param>
         /// <param name="lfo">modulation-LFO parameters driving this region's vibrato over the note's life</param>
+        /// <param name="pan">static per-voice stereo position in [-1,1] (-1 = full left, 0 = centre, +1 = full right), sourced from SF2 generator 17</param>
         public SampleRegion(
             float[] buffer,
             int start,
@@ -35,7 +36,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             int pitchCorrectionCents,
             EnvelopeParameters envelope,
             FilterParameters filter,
-            LfoParameters lfo) {
+            LfoParameters lfo,
+            float pan) {
             if (buffer is null)
                 throw new ArgumentNullException(nameof(buffer));
             if (start < 0 || start >= buffer.Length)
@@ -64,6 +66,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             Envelope = envelope;
             Filter = filter;
             Lfo = lfo;
+            Pan = pan;
         }
 
         /// <summary>
@@ -125,5 +128,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// Modulation-LFO parameters driving this region's vibrato (pitch modulation) over the note's life.
         /// </summary>
         public LfoParameters Lfo { get; }
+
+        /// <summary>
+        /// Static per-voice stereo position in [-1,1] (-1 = full left, 0 = centre, +1 = full right),
+        /// sourced from SF2 generator 17 and combined with the channel's dynamic pan at mix time.
+        /// </summary>
+        public float Pan { get; }
     }
 }

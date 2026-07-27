@@ -23,7 +23,7 @@ namespace Pooshit.AudioSynth.Tests {
             for (int i = 0; i < buffer.Length; i++)
                 buffer[i] = (float)Math.Sin(2.0 * Math.PI * frequency * i / SampleRate);
             return new SampleRegion(buffer, 0, buffer.Length, 0, buffer.Length, LoopMode.Continuous,
-                SampleRate, 60, 0, EnvelopeParameters.Default, filter, LfoParameters.Default);
+                SampleRate, 60, 0, EnvelopeParameters.Default, filter, LfoParameters.Default, 0f);
         }
 
         static float[] Render(SampleRegion region, int frames) {
