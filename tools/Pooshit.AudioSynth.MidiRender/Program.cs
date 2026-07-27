@@ -45,7 +45,7 @@ using (FileStream songStream = File.OpenRead(songPath))
     midiFile = MidiFile.Read(songStream);
 
 TimedMessageSequence sequence = new TimedMessageSequence(midiFile);
-SynthesizerOptions options = new SynthesizerOptions(format.SampleRate, format.Channels, SynthesizerOptions.DefaultBlockFrames, MaxVoicesForSongRender);
+SynthesizerOptions options = new SynthesizerOptions(format.SampleRate, format.Channels, SynthesizerOptions.DefaultBlockFrames, MaxVoicesForSongRender, ReverbSettings.Default);
 Synthesizer synthesizer = new Synthesizer(options, bank.GetPatch(0, 0));
 
 long frames;
