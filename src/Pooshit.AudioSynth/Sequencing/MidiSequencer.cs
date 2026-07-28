@@ -57,6 +57,12 @@ namespace Pooshit.AudioSynth.Sequencing {
         const int PitchWheelSpan = 8192;
 
         /// <summary>
+        /// The 14-bit RPN-null selector (CC101=127, CC100=127): the standard MIDI value meaning
+        /// "no RPN armed", so a stray Data Entry (CC6) is ignored (DiVoid #7210 §6).
+        /// </summary>
+        const int RpnNull = 16383;
+
+        /// <summary>
         /// Builds the ordered sample-offset schedule for <paramref name="sequence"/>; pure, no audio
         /// touched. Folds a <c>NoteOn</c> with velocity 0 into its <c>NoteOff</c> equivalent.
         /// </summary>
@@ -98,6 +104,8 @@ namespace Pooshit.AudioSynth.Sequencing {
 
             int[] cc7 = new int[ChannelCount];
             int[] cc11 = new int[ChannelCount];
+            int[] selectedRpn = new int[ChannelCount];
+            float[] bendRange = new float[ChannelCount];
             for (int channel = 0; channel < ChannelCount; channel++) {
                 synthesizer.SetChannelPatch(channel, ResolveProgramPatch(soundBank, channel, DefaultProgram));
                 cc7[channel] = DefaultChannelVolume;
@@ -106,6 +114,8 @@ namespace Pooshit.AudioSynth.Sequencing {
                 synthesizer.SetChannelPan(channel, 0f);
                 synthesizer.SetChannelReverbSend(channel, DefaultReverbSend / (float)ControllerFullScale);
                 synthesizer.SetChannelChorusSend(channel, DefaultChorusSend / (float)ControllerFullScale);
+                selectedRpn[channel] = RpnNull;
+                bendRange[channel] = PitchBendSemitoneRange;
             }
 
             ScheduledMidiEvent[] schedule = BuildSchedule(sequence, synthesizer.Format.SampleRate);
@@ -115,7 +125,7 @@ namespace Pooshit.AudioSynth.Sequencing {
                 long gap = scheduled.SampleOffset - cursor;
                 if (gap > 0)
                     cursor += OfflineRenderer.Render(synthesizer, sink, gap);
-                ApplyMessage(scheduled.Message, synthesizer, soundBank, cc7, cc11);
+                ApplyMessage(scheduled.Message, synthesizer, soundBank, cc7, cc11, selectedRpn, bendRange);
             }
 
             long tailFrames = (long)Math.Round(ReleaseTailSeconds * synthesizer.Format.SampleRate, MidpointRounding.AwayFromZero);
@@ -129,7 +139,12 @@ namespace Pooshit.AudioSynth.Sequencing {
             return message;
         }
 
-        static void ApplyMessage(IMidiMessage message, ISynthesizer synthesizer, SoundBank soundBank, int[] cc7, int[] cc11) {
+        /// <summary>
+        /// Applies one scheduled MIDI message. CC101/CC100 arm a channel's 14-bit RPN selector;
+        /// while that selector is 0 (RPN 0, Pitch Bend Sensitivity), CC6 sets <paramref name="bendRange"/>
+        /// for the channel, otherwise CC6 is ignored (DiVoid #7210).
+        /// </summary>
+        static void ApplyMessage(IMidiMessage message, ISynthesizer synthesizer, SoundBank soundBank, int[] cc7, int[] cc11, int[] selectedRpn, float[] bendRange) {
             if (!(message is ChannelMessage channel))
                 return;
 
@@ -164,6 +179,19 @@ namespace Pooshit.AudioSynth.Sequencing {
                         synthesizer.SetChannelModulation(channel.MidiChannel, channel.Data2 / (float)ControllerFullScale);
                         break;
                     }
+                    if (channel.Data1 == (byte)ControllerType.RegisteredParameterCoarse) {
+                        selectedRpn[channel.MidiChannel] = (channel.Data2 << 7) | (selectedRpn[channel.MidiChannel] & 0x7F);
+                        break;
+                    }
+                    if (channel.Data1 == (byte)ControllerType.RegisteredParameterFine) {
+                        selectedRpn[channel.MidiChannel] = (selectedRpn[channel.MidiChannel] & 0x3F80) | channel.Data2;
+                        break;
+                    }
+                    if (channel.Data1 == (byte)ControllerType.DataEntrySlider) {
+                        if (selectedRpn[channel.MidiChannel] == 0)
+                            bendRange[channel.MidiChannel] = channel.Data2;
+                        break;
+                    }
                     if (channel.Data1 == (byte)ControllerType.Volume)
                         cc7[channel.MidiChannel] = channel.Data2;
                     else if (channel.Data1 == (byte)ControllerType.Expression)
@@ -174,7 +202,7 @@ namespace Pooshit.AudioSynth.Sequencing {
                     break;
                 case ChannelCommandType.PitchWheel:
                     int value14 = (channel.Data2 << 7) | channel.Data1;
-                    float semitones = (value14 - PitchWheelCenter) / (float)PitchWheelSpan * PitchBendSemitoneRange;
+                    float semitones = (value14 - PitchWheelCenter) / (float)PitchWheelSpan * bendRange[channel.MidiChannel];
                     synthesizer.SetChannelPitchBend(channel.MidiChannel, semitones);
                     break;
             }
