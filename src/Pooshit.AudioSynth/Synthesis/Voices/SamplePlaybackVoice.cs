@@ -20,11 +20,22 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
     /// which is click-free by construction (state is preserved across the retarget).  Zero depth on all
     /// three routings reproduces the pre-LFO render bit-for-bit.  <see cref="SetPitchBend"/> folds a
     /// channel-driven pitch-bend ratio into the same control-tick increment recompute; a centered bend
-    /// (1.0) reproduces the pre-bend increment bit-for-bit.
+    /// (1.0) reproduces the pre-bend increment bit-for-bit.  <see cref="SetModWheel"/> drives a second,
+    /// dedicated <see cref="ModulationLfo"/> — independent of the region's own LFO and its bypass —
+    /// whose output is scaled by <see cref="MaxModWheelVibratoCents"/> and the live mod-wheel amount and
+    /// folded into the same control-tick increment recompute; the mod-wheel LFO advances only while the
+    /// amount is non-zero, so a channel that never sends CC1 reproduces the pre-mod-wheel increment
+    /// bit-for-bit.
     /// </summary>
     public sealed class SamplePlaybackVoice : IVoice {
 
         const int ControlRateFrames = 64;
+
+        /// <summary>
+        /// Peak mod-wheel vibrato depth, in cents, at full LFO excursion and amount=1 (GM/DLS
+        /// default-modulator convention: CC1 maps to a ±50-cent vibrato).
+        /// </summary>
+        const float MaxModWheelVibratoCents = 50f;
 
         readonly SampleRegion region;
         readonly float pitchIncrement;
@@ -33,8 +44,10 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         AmplitudeEnvelope envelope;
         BiquadLowPassFilter filter;
         ModulationLfo lfo;
+        ModulationLfo modWheelLfo;
         float effectiveIncrement;
         float bendFactor;
+        float modWheelAmount;
         float tremoloCurrent;
         float tremoloStep;
         int controlTicksRemaining;
@@ -59,8 +72,12 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
             envelope = new AmplitudeEnvelope(region.Envelope, outputSampleRate);
             filter = new BiquadLowPassFilter(region.Filter, outputSampleRate);
             lfo = new ModulationLfo(region.Lfo, outputSampleRate);
+            modWheelLfo = new ModulationLfo(
+                new LfoParameters(0f, LfoParameters.Sf2DefaultFrequencyHz, MaxModWheelVibratoCents, 0f, 0f),
+                outputSampleRate);
             effectiveIncrement = pitchIncrement;
             bendFactor = 1f;
+            modWheelAmount = 0f;
             tremoloCurrent = 1f;
             tremoloStep = 0f;
             controlTicksRemaining = 0;
@@ -85,6 +102,11 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         }
 
         /// <inheritdoc/>
+        public void SetModWheel(float amount) {
+            modWheelAmount = amount;
+        }
+
+        /// <inheritdoc/>
         public float Pan => region.Pan;
 
         /// <inheritdoc/>
@@ -101,7 +123,17 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
             for (int i = 0; i < count; i++) {
                 if (controlTicksRemaining <= 0) {
                     float lfoValue = lfo.Advance(ControlRateFrames);
-                    effectiveIncrement = pitchIncrement * (float)Math.Pow(2.0, lfoValue * region.Lfo.PitchDepthCents / 1200.0) * bendFactor;
+                    float regionVibrato = (float)Math.Pow(2.0, lfoValue * region.Lfo.PitchDepthCents / 1200.0);
+
+                    float modVibrato;
+                    if (modWheelAmount != 0f) {
+                        float modLfoValue = modWheelLfo.Advance(ControlRateFrames);
+                        modVibrato = (float)Math.Pow(2.0, modLfoValue * MaxModWheelVibratoCents * modWheelAmount / 1200.0);
+                    } else {
+                        modVibrato = 1f;
+                    }
+
+                    effectiveIncrement = pitchIncrement * regionVibrato * modVibrato * bendFactor;
 
                     if (region.Lfo.VolumeDepthCentibels != 0f) {
                         float tremoloTarget = (float)Math.Pow(10.0, lfoValue * region.Lfo.VolumeDepthCentibels / 200.0);

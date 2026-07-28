@@ -35,6 +35,11 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         internal List<(int Channel, float Semitones)> ChannelPitchBendCalls { get; } = new List<(int, float)>();
 
         /// <summary>
+        /// Every (channel, amount) pair passed to <see cref="SetChannelModulation"/>, in call order.
+        /// </summary>
+        internal List<(int Channel, float Amount)> ChannelModulationCalls { get; } = new List<(int, float)>();
+
+        /// <summary>
         /// Every (channel, pan) pair passed to <see cref="SetChannelPan"/>, in call order.
         /// </summary>
         internal List<(int Channel, float Pan)> ChannelPanCalls { get; } = new List<(int, float)>();
@@ -62,6 +67,9 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
 
         /// <inheritdoc/>
         public void SetChannelPitchBend(int channel, float semitones) => ChannelPitchBendCalls.Add((channel, semitones));
+
+        /// <inheritdoc/>
+        public void SetChannelModulation(int channel, float amount) => ChannelModulationCalls.Add((channel, amount));
 
         /// <inheritdoc/>
         public void SetChannelPan(int channel, float pan) => ChannelPanCalls.Add((channel, pan));
