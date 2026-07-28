@@ -168,6 +168,39 @@ Ordered, at the architectural-unit level (no code here — this is the work brea
 5. **Build + test gates.** Both TFMs (`netstandard2.0;net8.0`) 0-warning; `dotnet test` FOREGROUND with `timeout: 600000` (slow suite #7173), green.
 6. **Self-audit on committed code** (Code Contracts §6.10 / §0 / §1): body-comment grep = **0**; one type per file (unchanged — no new type file); XML-summary present on the new const and the modified method; explicit types, no `var`; no `private` modifier noise. Confirm the diff is exactly: one new const + the `ApplyMasterBus` body fold + the two test updates + this doc. Nothing else.
 
+## 15. Pre-Design Checklist (Design Contracts #1136 §5 — walked verbatim)
+
+**KISS / DRY / YAGNI**
+- [x] No new type whose value-space mirrors an existing type — no new type at all (one `const`).
+- [x] No new abstraction with one implementation — none introduced.
+- [x] No element justified by "we might need X later" — the trim is provably needed now (BUG #7212 measurement); makeup and adaptivity are explicitly rejected as YAGNI/over-engineering.
+- [x] No deprecation period / feature flag / compat shim — atomic single-PR behavioural change.
+- [x] "Do not extract / inline N sites": N/A — the change is one const + a fold into one existing method; no duplication introduced (0 sites).
+
+**Existing systems first**
+- [x] Audited whether an existing surface covers the concern — yes: `ApplyMasterBus` is the master-bus stage; the trim folds into it rather than adding a parallel stage (Form B).
+- [x] New layer's reason to not live on the existing surface — N/A, no new layer; it lives *inside* the existing method.
+- [x] New persisted data point's 4-week decision — N/A, no persisted data (a compile-time const).
+- [x] "Existing reader projects it" consumer-chain — N/A, no field/DTO.
+
+**Configurability**
+- [x] Every new config knob has a named operator / env difference — **no config knob**; the trim is a `const` (Design Contracts §3: magic numbers stay magic — no operator tunes it per-environment; it is a fixed engine characteristic).
+- [x] "Telemetry-then-tune" knob paired with a filed task — N/A, not a config knob (O2 flags one throwaway measurement during tuning, explicitly NOT shipped as runtime telemetry).
+- [x] Magic numbers that don't vary stay `const`, clearly named — `MasterHeadroomTrim`, beside `MasterBusKneeThreshold`.
+
+**Less is better**
+- [x] can-it-be-deleted / merged / inlined — the trim is *merged* into `ApplyMasterBus` (Form B) rather than a standalone stage; nothing left deletable.
+- [x] Trade-offs named explicitly when the complex design would win — §10 names the fixed-trim-vs-adaptive and no-makeup trade-offs with probability/cost; the simple design wins.
+- [x] No-consumer → radical-clean shape — N/A (no surface removal).
+- [x] Reader-inventory / carrier-swap tables — N/A (no rename, no DTO change).
+
+**Document discipline**
+- [x] Cites Code Contracts #114 and Design Contracts #1136 as load-bearing — top banner.
+- [x] Reader / scope inventories explicit — §2 scope + §6 blast radius explicit.
+- [x] Out-of-scope items listed explicitly — §2 Non-Scope.
+- [x] No multi-paragraph "rationale for keeping X" for things that obviously stay.
+- [x] Supersession banner — this doc notes it supersedes mix-bus #7126's deferred O2/O3 (the master-trim const); #7126 itself is not superseded end-to-end (only its one deferred open question is resolved here), so no `> SUPERSEDED` banner on #7126 is warranted — a targeted note suffices.
+
 ---
 
 *Author: sarah-software-architect · 2026-07-28 · supersedes mix-bus #7126's deferred open question O2/O3 (the master-trim const), which is now provably needed and specified here.*
