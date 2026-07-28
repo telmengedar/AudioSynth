@@ -50,6 +50,11 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         internal List<(int Channel, float Level)> ChannelReverbSendCalls { get; } = new List<(int, float)>();
 
         /// <summary>
+        /// Every (channel, level) pair passed to <see cref="SetChannelChorusSend"/>, in call order.
+        /// </summary>
+        internal List<(int Channel, float Level)> ChannelChorusSendCalls { get; } = new List<(int, float)>();
+
+        /// <summary>
         /// Every (channel, held) pair passed to <see cref="SetChannelSustain"/>, in call order.
         /// </summary>
         internal List<(int Channel, bool Held)> ChannelSustainCalls { get; } = new List<(int, bool)>();
@@ -76,6 +81,9 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
 
         /// <inheritdoc/>
         public void SetChannelReverbSend(int channel, float level) => ChannelReverbSendCalls.Add((channel, level));
+
+        /// <inheritdoc/>
+        public void SetChannelChorusSend(int channel, float level) => ChannelChorusSendCalls.Add((channel, level));
 
         /// <inheritdoc/>
         public void SetChannelSustain(int channel, bool held) => ChannelSustainCalls.Add((channel, held));

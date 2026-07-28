@@ -38,6 +38,9 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// <summary>GM1 default for CC91 (Effects 1 Depth / reverb send).</summary>
         const int DefaultReverbSend = 40;
 
+        /// <summary>GM default for CC93 (Effects 3 Depth / chorus send): off unless the song raises it.</summary>
+        const int DefaultChorusSend = 0;
+
         /// <summary>
         /// CC64 (Hold Pedal 1 / sustain) threshold: a raw value at or above this is "pedal down"
         /// (MIDI convention), below it is "pedal up".
@@ -102,6 +105,7 @@ namespace Pooshit.AudioSynth.Sequencing {
                 synthesizer.SetChannelGain(channel, ChannelGain(cc7[channel], cc11[channel]));
                 synthesizer.SetChannelPan(channel, 0f);
                 synthesizer.SetChannelReverbSend(channel, DefaultReverbSend / (float)ControllerFullScale);
+                synthesizer.SetChannelChorusSend(channel, DefaultChorusSend / (float)ControllerFullScale);
             }
 
             ScheduledMidiEvent[] schedule = BuildSchedule(sequence, synthesizer.Format.SampleRate);
@@ -146,6 +150,10 @@ namespace Pooshit.AudioSynth.Sequencing {
                     }
                     if (channel.Data1 == (byte)ControllerType.EffectsLevel) {
                         synthesizer.SetChannelReverbSend(channel.MidiChannel, channel.Data2 / (float)ControllerFullScale);
+                        break;
+                    }
+                    if (channel.Data1 == (byte)ControllerType.ChorusLevel) {
+                        synthesizer.SetChannelChorusSend(channel.MidiChannel, channel.Data2 / (float)ControllerFullScale);
                         break;
                     }
                     if (channel.Data1 == (byte)ControllerType.HoldPedal1) {

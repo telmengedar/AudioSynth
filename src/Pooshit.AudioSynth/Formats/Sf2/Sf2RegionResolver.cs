@@ -31,6 +31,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const float PanUnitsDivisor = 500f;
         const int MaxReverbSendUnits = 1000;
         const float ReverbSendUnitsDivisor = 1000f;
+        const int MaxChorusSendUnits = 1000;
+        const float ChorusSendUnitsDivisor = 1000f;
 
         readonly Sf2PresetHeader preset;
         readonly Sf2Instrument[] instruments;
@@ -203,6 +205,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             LfoParameters lfo = BuildLfoParameters(zone, globalZone);
             float pan = BuildPan(zone, globalZone);
             float reverbSend = BuildReverbSend(zone, globalZone);
+            float chorusSend = BuildChorusSend(zone, globalZone);
 
             return new SampleRegion(
                 floatPool,
@@ -218,7 +221,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 filter,
                 lfo,
                 pan,
-                reverbSend);
+                reverbSend,
+                chorusSend);
         }
 
         /// <summary>
@@ -247,6 +251,21 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             if (raw < 0)
                 raw = 0;
             return raw / ReverbSendUnitsDivisor;
+        }
+
+        /// <summary>
+        /// Reads generator 15 (chorusEffectsSend) in 0.1%-units (0..1000 → 0..1); absent defaults to the
+        /// SF2 spec's literal generator default of 0 — an absent gen-15 contributes no additive bias, so
+        /// the channel's CC93 send still drives the voice on its own (additive/clamped combination,
+        /// design #7190 §8).
+        /// </summary>
+        static float BuildChorusSend(Sf2Zone zone, Sf2Zone? globalZone) {
+            int raw = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.ChorusEffectsSend, defaultValue: 0);
+            if (raw > MaxChorusSendUnits)
+                raw = MaxChorusSendUnits;
+            if (raw < 0)
+                raw = 0;
+            return raw / ChorusSendUnitsDivisor;
         }
 
         static FilterParameters BuildFilterParameters(Sf2Zone zone, Sf2Zone? globalZone) {

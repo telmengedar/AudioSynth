@@ -40,13 +40,21 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// (CC91 × SF2 gen-16); <c>true</c> reverts to a uniform master insert where every voice sends
         /// fully, reproducing the pre-send-bus (PR 16) render bit-for-bit
         /// </param>
+        /// <param name="chorus">master-bus chorus settings; <c>null</c> (the default) leaves the master path unaffected by chorus</param>
+        /// <param name="globalChorus">
+        /// chorus routing selector: <c>false</c> (the default) honours per-channel/per-voice chorus send
+        /// (CC93 + SF2 gen-15, additive); <c>true</c> routes chorus as a uniform master insert where every
+        /// voice sends fully, mirroring <paramref name="globalReverb"/>
+        /// </param>
         public SynthesizerOptions(
             int sampleRate = DefaultSampleRate,
             int channels = DefaultChannels,
             int blockFrames = DefaultBlockFrames,
             int maxVoices = DefaultMaxVoices,
             ReverbSettings? reverb = null,
-            bool globalReverb = false) {
+            bool globalReverb = false,
+            ChorusSettings? chorus = null,
+            bool globalChorus = false) {
             if (sampleRate <= 0)
                 throw new ArgumentOutOfRangeException(nameof(sampleRate), sampleRate, "Sample rate must be positive.");
             if (channels <= 0)
@@ -61,6 +69,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             MaxVoices = maxVoices;
             Reverb = reverb;
             GlobalReverb = globalReverb;
+            Chorus = chorus;
+            GlobalChorus = globalChorus;
         }
 
         /// <summary>
@@ -97,5 +107,21 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// meaningful when <see cref="Reverb"/> is configured and <see cref="Channels"/> is 2 (stereo).
         /// </summary>
         public bool GlobalReverb { get; }
+
+        /// <summary>
+        /// Master-bus chorus settings; <c>null</c> (the default) means no chorus is constructed and the
+        /// master path is unaffected by chorus. Only takes effect when <see cref="Channels"/> equals 2
+        /// (stereo).
+        /// </summary>
+        public ChorusSettings? Chorus { get; }
+
+        /// <summary>
+        /// Chorus routing selector. <c>false</c> (the default): each voice feeds the chorus through a
+        /// per-channel-weighted send bus, honouring CC93 (<see cref="ISynthesizer.SetChannelChorusSend"/>)
+        /// combined additively with each voice's SF2 gen-15 send. <c>true</c>: the chorus is a uniform
+        /// master insert (every voice sends fully), mirroring <see cref="GlobalReverb"/>. Only meaningful
+        /// when <see cref="Chorus"/> is configured and <see cref="Channels"/> is 2 (stereo).
+        /// </summary>
+        public bool GlobalChorus { get; }
     }
 }

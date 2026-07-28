@@ -30,6 +30,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// channel's <see cref="ISynthesizer.SetChannelReverbSend"/> weight drive fully) rather than SF2's
         /// literal gen-16 default of 0, so CC91 is never impotent for regions that omit the generator.
         /// </param>
+        /// <param name="chorusSend">
+        /// static per-voice chorus-send weight in [0,1], sourced from SF2 generator 15 (chorusEffectsSend);
+        /// defaults to <c>0f</c>, matching both the SF2 spec's literal gen-15 default and the additive
+        /// combination's neutral element, so a region without an explicit gen-15 contributes no bias and
+        /// the channel's <see cref="ISynthesizer.SetChannelChorusSend"/> weight alone still drives the
+        /// voice (no impotence special-case, unlike <paramref name="reverbSend"/>'s inherited 1f).
+        /// </param>
         public SampleRegion(
             float[] buffer,
             int start,
@@ -44,7 +51,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             FilterParameters filter,
             LfoParameters lfo,
             float pan,
-            float reverbSend = 1f) {
+            float reverbSend = 1f,
+            float chorusSend = 0f) {
             if (buffer is null)
                 throw new ArgumentNullException(nameof(buffer));
             if (start < 0 || start >= buffer.Length)
@@ -75,6 +83,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             Lfo = lfo;
             Pan = pan;
             ReverbSend = reverbSend;
+            ChorusSend = chorusSend;
         }
 
         /// <summary>
@@ -148,5 +157,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// multiplicatively with the channel's dynamic reverb-send weight at mix time.
         /// </summary>
         public float ReverbSend { get; }
+
+        /// <summary>
+        /// Static per-voice chorus-send weight in [0,1], sourced from SF2 generator 15 and combined
+        /// additively with the channel's dynamic chorus-send weight at mix time.
+        /// </summary>
+        public float ChorusSend { get; }
     }
 }

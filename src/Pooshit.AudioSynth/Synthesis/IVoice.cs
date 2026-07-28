@@ -46,5 +46,12 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// weight at mix time. <c>0</c> for inactive/silent voices.
         /// </summary>
         float ReverbSend { get; }
+
+        /// <summary>
+        /// The voice's static chorus-send weight in [0,1], immutable for the voice's lifetime; combined
+        /// additively with the channel's dynamic <see cref="ISynthesizer.SetChannelChorusSend"/> weight
+        /// at mix time (clamped to [0,1]). <c>0</c> for inactive/silent voices.
+        /// </summary>
+        float ChorusSend { get; }
     }
 }

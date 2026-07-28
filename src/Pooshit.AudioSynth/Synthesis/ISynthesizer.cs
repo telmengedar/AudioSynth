@@ -58,6 +58,16 @@ namespace Pooshit.AudioSynth.Synthesis {
         void SetChannelReverbSend(int channel, float level);
 
         /// <summary>
+        /// Sets a channel's chorus-send weight (typically driven by MIDI CC93), a scalar expected in
+        /// [0,1]; applies to the channel's currently-sounding and future voices, read live each block
+        /// rather than captured at note-on, and combined additively with each voice's static
+        /// <see cref="IVoice.ChorusSend"/> (clamped to [0,1] — never multiplicatively, so a voice's
+        /// absent gen-15 bias never nullifies the channel's send). MIDI-neutral: mirrors
+        /// <see cref="SetChannelReverbSend"/>.
+        /// </summary>
+        void SetChannelChorusSend(int channel, float level);
+
+        /// <summary>
         /// Sets a channel's sustain (hold) pedal state, typically driven by MIDI CC64. While held,
         /// a <see cref="NoteOff"/> on the channel defers the voice's release instead of releasing it
         /// immediately; when disengaged, every voice on the channel deferred since the pedal went down
