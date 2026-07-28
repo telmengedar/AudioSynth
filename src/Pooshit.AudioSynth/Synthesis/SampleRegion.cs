@@ -154,7 +154,7 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         /// <summary>
         /// Static per-voice reverb-send weight in [0,1], sourced from SF2 generator 16 and combined
-        /// multiplicatively with the channel's dynamic reverb-send weight at mix time.
+        /// additively with the channel's dynamic reverb-send weight at mix time (clamped to [0,1]).
         /// </summary>
         public float ReverbSend { get; }
 

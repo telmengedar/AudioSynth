@@ -42,8 +42,8 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         /// <summary>
         /// The voice's static reverb-send weight in [0,1], immutable for the voice's lifetime; combined
-        /// multiplicatively with the channel's dynamic <see cref="ISynthesizer.SetChannelReverbSend"/>
-        /// weight at mix time. <c>0</c> for inactive/silent voices.
+        /// additively with the channel's dynamic <see cref="ISynthesizer.SetChannelReverbSend"/>
+        /// weight at mix time (clamped to [0,1]). <c>0</c> for inactive/silent voices.
         /// </summary>
         float ReverbSend { get; }
 
