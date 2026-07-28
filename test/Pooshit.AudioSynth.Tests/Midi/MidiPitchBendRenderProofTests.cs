@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using NUnit.Framework;
 using Pooshit.AudioSynth.Audio;
@@ -137,6 +138,71 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(leadChannelCalls, Is.GreaterThan(1000),
                 "the diagnosed bend activity is concentrated on lead channels 10-13; " +
                 $"only {leadChannelCalls} of {synth.ChannelPitchBendCalls.Count} calls targeted them.");
+        }
+
+        [Test]
+        [Description("Deliverable proof (DiVoid #7209/#7210): in 1-10-Force_Your_Way.mid, channel 6 (Distortion " +
+                     "Guitar) arms RPN 0 to a 12-semitone bend range partway through the song. PitchWheel events " +
+                     "before that point must decode within the GM ±2 semitone band; events after must reach well " +
+                     "beyond it (the intended +1 octave whammy). Skips gracefully when the dev-tree asset is absent.")]
+        public void RealSong_ForceYourWay_Channel6BendWidensFromRpn0() {
+            string? songPath = FindDevTreeAsset("Midi", "1-10-Force_Your_Way.mid");
+            if (songPath is null) {
+                Assert.Ignore("1-10-Force_Your_Way.mid dev-tree asset not found; skipping the RPN-0 deliverable proof.");
+                return;
+            }
+
+            const int guitarChannel = 6;
+            const float gmBandLimit = 2.1f;
+            const float octaveBandFloor = 4f;
+
+            MidiFile midiFile;
+            using (FileStream songStream = File.OpenRead(songPath))
+                midiFile = MidiFile.Read(songStream);
+            TimedMessageSequence sequence = new TimedMessageSequence(midiFile);
+
+            int splitIndex = 0;
+            bool rpnArmed = false;
+            foreach (TimedMidiMessage timed in sequence.Messages) {
+                if (timed.Message is ChannelMessage channel && channel.MidiChannel == guitarChannel) {
+                    if (channel.Command == ChannelCommandType.Controller && channel.Data1 == (byte)ControllerType.DataEntrySlider) {
+                        rpnArmed = true;
+                        break;
+                    }
+                    if (channel.Command == ChannelCommandType.PitchWheel)
+                        splitIndex++;
+                }
+            }
+            Assert.That(rpnArmed, Is.True, "the song must contain the diagnosed RPN-0 Data Entry (CC6) on channel 6.");
+
+            RecordingSynthesizer synth = new RecordingSynthesizer(Format);
+            StubPatch piano = new StubPatch("piano");
+            SoundBank bank = new SoundBank(new[] {
+                (0, 0, (IPatch)piano),
+                (128, 0, (IPatch)piano),
+            });
+            MidiSequencer.Render(sequence, synth, new InMemoryAudioSink(Format), bank);
+
+            List<float> guitarBends = new List<float>();
+            foreach ((int channel, float semitones) in synth.ChannelPitchBendCalls) {
+                if (channel == guitarChannel)
+                    guitarBends.Add(semitones);
+            }
+            Assert.That(guitarBends.Count, Is.GreaterThan(splitIndex),
+                "there must be PitchWheel events on channel 6 after the RPN-0 Data Entry.");
+
+            for (int i = 0; i < splitIndex; i++)
+                Assert.That(Math.Abs(guitarBends[i]), Is.LessThanOrEqualTo(gmBandLimit),
+                    $"before RPN 0, channel 6 bend #{i} ({guitarBends[i]}) must stay within the GM ±2 semitone band.");
+
+            bool anyOctaveBand = false;
+            for (int i = splitIndex; i < guitarBends.Count; i++) {
+                if (Math.Abs(guitarBends[i]) > octaveBandFloor)
+                    anyOctaveBand = true;
+            }
+            Assert.That(anyOctaveBand, Is.True,
+                "after RPN 0 widens the range to 12, at least one channel 6 bend must exceed the old GM ±2 band, " +
+                "evidencing the intended +1 octave whammy instead of the pre-fix 6x undershoot.");
         }
 
         [Test]
