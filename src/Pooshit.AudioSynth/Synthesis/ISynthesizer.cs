@@ -35,6 +35,14 @@ namespace Pooshit.AudioSynth.Synthesis {
         void SetChannelPitchBend(int channel, float semitones);
 
         /// <summary>
+        /// Sets a channel's mod-wheel vibrato depth (typically driven by MIDI CC1), a scalar expected
+        /// in [0,1]; applies to the channel's currently-sounding voices and is inherited by future
+        /// <see cref="NoteOn"/> calls on the same channel. MIDI-neutral: mirrors
+        /// <see cref="SetChannelPitchBend"/>.
+        /// </summary>
+        void SetChannelModulation(int channel, float amount);
+
+        /// <summary>
         /// Sets a channel's stereo pan position, a signed value where -1 = full left, 0 = centre, and
         /// +1 = full right; applies to the channel's currently-sounding and future voices, read live
         /// each block rather than captured at note-on. MIDI-neutral: mirrors <see cref="SetChannelGain"/>.

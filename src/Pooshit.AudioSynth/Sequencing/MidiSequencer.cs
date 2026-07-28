@@ -152,6 +152,10 @@ namespace Pooshit.AudioSynth.Sequencing {
                         synthesizer.SetChannelSustain(channel.MidiChannel, channel.Data2 >= SustainPedalThreshold);
                         break;
                     }
+                    if (channel.Data1 == (byte)ControllerType.ModulationWheel) {
+                        synthesizer.SetChannelModulation(channel.MidiChannel, channel.Data2 / (float)ControllerFullScale);
+                        break;
+                    }
                     if (channel.Data1 == (byte)ControllerType.Volume)
                         cc7[channel.MidiChannel] = channel.Data2;
                     else if (channel.Data1 == (byte)ControllerType.Expression)

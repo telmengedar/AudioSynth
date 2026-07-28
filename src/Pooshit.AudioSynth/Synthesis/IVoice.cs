@@ -29,6 +29,12 @@ namespace Pooshit.AudioSynth.Synthesis {
         void SetPitchBend(float pitchFactor);
 
         /// <summary>
+        /// Sets the voice's live mod-wheel vibrato depth, typically driven by MIDI CC1, in [0,1];
+        /// 0 means no mod-wheel vibrato.
+        /// </summary>
+        void SetModWheel(float amount);
+
+        /// <summary>
         /// The voice's static stereo position in [-1,1] (-1 = full left, 0 = centre, +1 = full right),
         /// immutable for the voice's lifetime; combined with the channel's dynamic pan at mix time.
         /// </summary>

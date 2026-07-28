@@ -23,6 +23,9 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         public void SetPitchBend(float pitchFactor) { }
 
         /// <inheritdoc/>
+        public void SetModWheel(float amount) { }
+
+        /// <inheritdoc/>
         public float Pan => 0f;
 
         /// <inheritdoc/>
