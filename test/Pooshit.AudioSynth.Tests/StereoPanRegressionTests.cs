@@ -19,6 +19,12 @@ namespace Pooshit.AudioSynth.Tests {
         const int SampleRate = 44100;
         const int SettleFrames = 500;
 
+        /// <summary>
+        /// Mirrors <c>Synthesizer.MasterHeadroomTrim</c> (DiVoid BUG #7212, design #7213): the render goes
+        /// through the master bus, so the pre-pan centre-gain expectation is scaled by this factor.
+        /// </summary>
+        const float MasterHeadroomTrim = 0.5f;
+
         static SampleRegion BuildDcRegion(float value, int length, float pan) {
             float[] buf = new float[length];
             for (int i = 0; i < length; i++)
@@ -47,7 +53,7 @@ namespace Pooshit.AudioSynth.Tests {
             float right = samples[lastFrameBase + 1];
 
             float oldPanGain = (float)(1.0 / Math.Sqrt(2));
-            float expected = 0.2f * oldPanGain;
+            float expected = 0.2f * oldPanGain * MasterHeadroomTrim;
 
             Assert.That(left, Is.EqualTo(expected).Within(1e-4f),
                 $"centred L must reproduce the old panGain-scaled mix; measured L={left}, expected={expected}.");

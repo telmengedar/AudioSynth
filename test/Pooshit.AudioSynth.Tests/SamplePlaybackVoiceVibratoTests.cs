@@ -23,6 +23,14 @@ namespace Pooshit.AudioSynth.Tests {
         /// </summary>
         const int ControlRateFrames = 64;
 
+        /// <summary>
+        /// Mirrors <c>Synthesizer.MasterHeadroomTrim</c> (DiVoid BUG #7212, design #7213): <see cref="Render"/>
+        /// goes through the full <see cref="Synthesizer"/> path, so measured increments are divided by this
+        /// factor to compensate for the master-bus headroom attenuation before comparing against the
+        /// untrimmed ratio.
+        /// </summary>
+        const float MasterHeadroomTrim = 0.5f;
+
         static readonly EnvelopeParameters InstantSustainEnvelope = new EnvelopeParameters(0f, 0f, 0f, 0f, 1f, 0f);
 
         static SampleRegion BuildRampRegion(LfoParameters lfo, float scale, int length) {
@@ -72,7 +80,7 @@ namespace Pooshit.AudioSynth.Tests {
 
                 float expectedIncrement = (float)Math.Pow(2.0, predictedLfoValue * depthCents / 1200.0);
                 int frame = tick * ControlRateFrames + ControlRateFrames / 2;
-                float measuredIncrement = (output[frame + 1] - output[frame]) / scale;
+                float measuredIncrement = (output[frame + 1] - output[frame]) / scale / MasterHeadroomTrim;
 
                 Assert.That(measuredIncrement, Is.EqualTo(expectedIncrement).Within(0.01f),
                     $"tick {tick}: measured increment {measuredIncrement} did not track the LFO-predicted increment {expectedIncrement}.");
@@ -90,7 +98,7 @@ namespace Pooshit.AudioSynth.Tests {
             float[] output = Render(region, framesToRender);
 
             for (int i = convergedFrame; i < framesToRender - 1; i++) {
-                float measuredIncrement = (output[i + 1] - output[i]) / scale;
+                float measuredIncrement = (output[i + 1] - output[i]) / scale / MasterHeadroomTrim;
                 Assert.That(measuredIncrement, Is.EqualTo(1f).Within(1e-4f),
                     $"frame {i}: measured increment {measuredIncrement} deviates from the base pitch increment.");
             }

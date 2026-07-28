@@ -32,6 +32,13 @@ namespace Pooshit.AudioSynth.Tests {
         /// <summary>Trailing window, in frames, averaged to measure "is this voice still sounding".</summary>
         const int MeasureWindowFrames = 50;
 
+        /// <summary>
+        /// Mirrors <c>Synthesizer.MasterHeadroomTrim</c> (DiVoid BUG #7212, design #7213): every render goes
+        /// through the master bus, so "still sounding" assertions divide the measured level by this factor
+        /// to recover the pre-trim level before comparing against the raw settled DC value.
+        /// </summary>
+        const float MasterHeadroomTrim = 0.5f;
+
         static SynthesizerOptions MonoOptions(int maxVoices = 4) => new SynthesizerOptions(SampleRate, 1, 64, maxVoices);
 
         static SampleRegion BuildSustainedDcRegion(float value, int length) {
@@ -76,7 +83,7 @@ namespace Pooshit.AudioSynth.Tests {
             synth.NoteOff(0, 60);
             OfflineRenderer.Render(synth, sink, PostEventFrames);
 
-            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames);
+            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames) / MasterHeadroomTrim;
             TestContext.WriteLine($"Trailing level after deferred NoteOff: {level:F6} (settled value {value}).");
             Assert.That(level, Is.GreaterThan(value * 0.9f),
                 "a NoteOff received while the pedal is held must defer release; the voice must still be " +
@@ -179,7 +186,7 @@ namespace Pooshit.AudioSynth.Tests {
             synth.SetChannelSustain(0, false);
             OfflineRenderer.Render(synth, sink, PostEventFrames);
 
-            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames);
+            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames) / MasterHeadroomTrim;
             TestContext.WriteLine($"Trailing level for a physically-held note after a pedal cycle: {level:F6}.");
             Assert.That(level, Is.GreaterThan(value * 0.9f),
                 "a note that never received a NoteOff must keep sounding through an unrelated pedal cycle.");
@@ -212,7 +219,7 @@ namespace Pooshit.AudioSynth.Tests {
             synth.SetChannelSustain(0, false);
             OfflineRenderer.Render(synth, sink, PostEventFrames);
 
-            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames);
+            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames) / MasterHeadroomTrim;
             TestContext.WriteLine($"Trailing level for the reused-slot voice after pedal-up: {level:F6}.");
             Assert.That(level, Is.GreaterThan(heldValue * 0.9f),
                 "pedal-up must not release a new voice that reused a slot whose stale PendingRelease marker " +

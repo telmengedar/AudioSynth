@@ -8,14 +8,17 @@ using Pooshit.AudioSynth.Synthesis.Patches;
 namespace Pooshit.AudioSynth.Tests {
 
     /// <summary>
-    /// Regression tests for the master-bus soft-clip stage (DiVoid #7126): loud sums round off instead
-    /// of hard-clamping; a quiet voice below the knee is unaffected.
+    /// Regression tests for the master-bus stage (DiVoid #7126, #7212): loud sums round off instead
+    /// of hard-clamping; a quiet voice below the knee is uniformly attenuated by the headroom trim.
     /// </summary>
     public class MasterBusSoftClipTests {
 
         const int SampleRate = 44100;
         const int SettleFrames = 500;
         const int MeasureFrames = 500;
+
+        /// <summary>Mirrors <c>Synthesizer.MasterHeadroomTrim</c> (DiVoid BUG #7212, design #7213).</summary>
+        const float MasterHeadroomTrim = 0.5f;
 
         static SynthesizerOptions Options(int channels) => new SynthesizerOptions(SampleRate, channels, 64, 16);
 
@@ -29,10 +32,12 @@ namespace Pooshit.AudioSynth.Tests {
 
         [Test]
         [Description("Two simultaneous full-velocity voices, which previously summed past 1.0 and hard-clamped, " +
-                     "now round off under the ceiling: no sample reaches |s| >= 1.0, and the master bus is " +
-                     "measurably above the knee (the soft clip engaged, not just unity pass-through).")]
+                     "still never reach |s| >= 1.0. With the headroom trim (DiVoid BUG #7212) folded in, their " +
+                     "~1.41 pre-trim sum is now trimmed to ~0.71 — at or below the knee — demonstrating the " +
+                     "soft-clip no longer engages continuously on this normal-level material.")]
         public void SeveralLoudSimultaneousVoices_NoLongerClip() {
             const int LoudVoiceCount = 2;
+            const float KneeThreshold = 0.9f;
             SynthesizerOptions opts = Options(2);
             SampleRegion region = BuildDcRegion(1f, 1024);
             SamplePatch patch = new SamplePatch(region, opts.SampleRate);
@@ -59,14 +64,18 @@ namespace Pooshit.AudioSynth.Tests {
                 $"expected no sample pinned at the ceiling (two full-velocity stereo voices sum to ~1.41 " +
                 $"pre-clip; the old hard clamp would have pinned every one of these samples to exactly 1.0 " +
                 $"for the whole duration); found {clipped}.");
-            Assert.That(peak, Is.GreaterThan(0.9f), $"expected the soft-clip knee to have engaged; peak was {peak}.");
+            Assert.That(peak, Is.LessThanOrEqualTo(KneeThreshold),
+                $"expected the headroom trim to keep this normal-level sum at or below the soft-clip knee " +
+                $"({KneeThreshold}), demonstrating the limiter no longer engages continuously (DiVoid BUG #7212); " +
+                $"peak was {peak}.");
             Assert.That(peak, Is.LessThanOrEqualTo(1f), $"sample exceeded [-1,1]: {peak}.");
         }
 
         [Test]
-        [Description("A single quiet voice well below the knee is unaffected by the master bus stage " +
-                     "(low-level dynamics pass through unchanged).")]
-        public void QuietSingleVoice_UnaffectedByMasterBus() {
+        [Description("A single quiet voice below the knee is uniformly attenuated by the master headroom trim " +
+                     "(DiVoid BUG #7212): it is no longer passed through at unity — every finite sample, above " +
+                     "or below the knee, is scaled by MasterHeadroomTrim before the soft-clip stage.")]
+        public void QuietSingleVoice_AttenuatedByHeadroomTrim() {
             SynthesizerOptions opts = Options(1);
             SampleRegion region = BuildDcRegion(0.3f, 1024);
             SamplePatch patch = new SamplePatch(region, opts.SampleRate);
@@ -81,8 +90,9 @@ namespace Pooshit.AudioSynth.Tests {
             for (int i = SettleFrames; i < samples.Length; i++)
                 peak = Math.Max(peak, Math.Abs(samples[i]));
 
-            Assert.That(peak, Is.EqualTo(0.3f).Within(1e-4f),
-                $"a quiet DC voice below the knee should pass through the master bus unchanged; peak was {peak}.");
+            Assert.That(peak, Is.EqualTo(0.3f * MasterHeadroomTrim).Within(1e-4f),
+                $"a quiet DC voice below the knee should now read back trim x its level (headroom trim folded " +
+                $"into the master bus stage, DiVoid BUG #7212); peak was {peak}.");
         }
     }
 }

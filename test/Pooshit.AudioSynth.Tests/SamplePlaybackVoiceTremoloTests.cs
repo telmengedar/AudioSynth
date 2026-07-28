@@ -23,6 +23,13 @@ namespace Pooshit.AudioSynth.Tests {
         const float DcValue = 0.25f;
         const float ToneAmplitude = 0.1f;
 
+        /// <summary>
+        /// Mirrors <c>Synthesizer.MasterHeadroomTrim</c> (DiVoid BUG #7212, design #7213): the full
+        /// <see cref="Synthesizer"/> render path attenuates the master by this factor, so the measured
+        /// tremolo multiplier is divided by it before comparing against the untrimmed predicted glide.
+        /// </summary>
+        const float MasterHeadroomTrim = 0.5f;
+
         static SampleRegion BuildDcRegion(LfoParameters lfo, int length) {
             float[] buf = new float[length];
             for (int i = 0; i < length; i++)
@@ -78,7 +85,7 @@ namespace Pooshit.AudioSynth.Tests {
                 if (frame < firstCheckedFrame)
                     continue;
 
-                float measuredMultiplier = output[frame] / DcValue;
+                float measuredMultiplier = output[frame] / DcValue / MasterHeadroomTrim;
                 Assert.That(measuredMultiplier, Is.EqualTo(tremoloCurrent).Within(0.01f),
                     $"frame {frame}: measured tremolo gain {measuredMultiplier} did not track the predicted glide {tremoloCurrent}.");
             }

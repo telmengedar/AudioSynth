@@ -30,6 +30,13 @@ namespace Pooshit.AudioSynth.Tests {
         /// </summary>
         const float MaxModWheelVibratoCents = 50f;
 
+        /// <summary>
+        /// Mirrors <c>Synthesizer.MasterHeadroomTrim</c> (DiVoid BUG #7212, design #7213): tests that render
+        /// through the full <see cref="Synthesizer"/> path divide the measured increment by this factor to
+        /// compensate for the master-bus headroom attenuation before comparing against the untrimmed ratio.
+        /// </summary>
+        const float MasterHeadroomTrim = 0.5f;
+
         static readonly EnvelopeParameters InstantSustainEnvelope = new EnvelopeParameters(0f, 0f, 0f, 0f, 1f, 0f);
 
         static SampleRegion BuildRampRegion(LfoParameters lfo, float scale, int length) {
@@ -200,7 +207,7 @@ namespace Pooshit.AudioSynth.Tests {
                     continue;
 
                 float expectedIncrement = (float)Math.Pow(2.0, predictedLfoValue * MaxModWheelVibratoCents * amount / 1200.0);
-                float measured = MeasuredIncrementAtTick(output, tick, scale);
+                float measured = MeasuredIncrementAtTick(output, tick, scale) / MasterHeadroomTrim;
                 Assert.That(measured, Is.EqualTo(expectedIncrement).Within(0.01f),
                     $"tick {tick}: a note started during an active mod-wheel amount {amount} measured increment {measured}, expected {expectedIncrement}.");
             }
@@ -240,7 +247,7 @@ namespace Pooshit.AudioSynth.Tests {
                     continue;
 
                 float expectedIncrement = (float)Math.Pow(2.0, predictedLfoValue * MaxModWheelVibratoCents * amount / 1200.0);
-                float measured = MeasuredIncrementAtTick(output, tick, scale);
+                float measured = MeasuredIncrementAtTick(output, tick, scale) / MasterHeadroomTrim;
                 Assert.That(measured, Is.EqualTo(expectedIncrement).Within(0.01f),
                     $"tick {tick}: a mid-note SetChannelModulation of amount {amount} measured increment {measured}, expected {expectedIncrement}.");
             }

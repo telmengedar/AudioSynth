@@ -47,6 +47,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// </summary>
         const float MasterBusKneeThreshold = 0.9f;
 
+        /// <summary>
+        /// Master headroom attenuation applied to every finite sample before the soft-clip in
+        /// <see cref="ApplyMasterBus"/>, so normal-playing peaks fall below <see cref="MasterBusKneeThreshold"/>
+        /// and the limiter no longer engages continuously on dense material (DiVoid BUG #7212, design #7213).
+        /// </summary>
+        const float MasterHeadroomTrim = 0.5f;
+
         /// <summary>Output channel count for which per-voice equal-power stereo placement applies.</summary>
         const int StereoChannelCount = 2;
 
@@ -485,8 +492,10 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         /// <summary>
-        /// Stateless per-sample soft-clip on the master bus, before <see cref="Finalize"/> (INV-2): unity
-        /// below the knee, <c>tanh</c>-saturating toward ±1 above it; NaN/Inf samples pass through untouched.
+        /// Stateless per-sample master-bus stage, before <see cref="Finalize"/> (INV-2): applies the
+        /// <see cref="MasterHeadroomTrim"/> headroom trim, then a soft-clip on the trimmed value — unity
+        /// below the knee, <c>tanh</c>-saturating toward ±1 above it; NaN/Inf samples pass through untouched
+        /// (never trimmed, so <see cref="Finalize"/> remains their sole choke).
         /// </summary>
         static void ApplyMasterBus(Span<float> block) {
             for (int i = 0; i < block.Length; i++) {
@@ -494,11 +503,14 @@ namespace Pooshit.AudioSynth.Synthesis {
                 if (float.IsNaN(x) || float.IsInfinity(x))
                     continue;
 
-                float magnitude = Math.Abs(x);
-                if (magnitude <= MasterBusKneeThreshold)
+                float trimmed = x * MasterHeadroomTrim;
+                float magnitude = Math.Abs(trimmed);
+                if (magnitude <= MasterBusKneeThreshold) {
+                    block[i] = trimmed;
                     continue;
+                }
 
-                float sign = x < 0f ? -1f : 1f;
+                float sign = trimmed < 0f ? -1f : 1f;
                 float excess = (magnitude - MasterBusKneeThreshold) / (1f - MasterBusKneeThreshold);
                 block[i] = sign * (MasterBusKneeThreshold + (1f - MasterBusKneeThreshold) * (float)Math.Tanh(excess));
             }

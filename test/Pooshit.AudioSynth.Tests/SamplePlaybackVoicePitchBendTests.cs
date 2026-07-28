@@ -22,6 +22,13 @@ namespace Pooshit.AudioSynth.Tests {
         /// <summary>The voice's control-rate tick period, mirroring <see cref="SamplePlaybackVoiceVibratoTests"/>.</summary>
         const int ControlRateFrames = 64;
 
+        /// <summary>
+        /// Mirrors <c>Synthesizer.MasterHeadroomTrim</c> (DiVoid BUG #7212, design #7213): tests that render
+        /// through the full <see cref="Synthesizer"/> path divide the measured increment by this factor to
+        /// compensate for the master-bus headroom attenuation before comparing against the untrimmed ratio.
+        /// </summary>
+        const float MasterHeadroomTrim = 0.5f;
+
         static readonly EnvelopeParameters InstantSustainEnvelope = new EnvelopeParameters(0f, 0f, 0f, 0f, 1f, 0f);
 
         static SampleRegion BuildRampRegion(float scale, int length) {
@@ -123,7 +130,7 @@ namespace Pooshit.AudioSynth.Tests {
 
             float[] output = sink.ToArray();
             for (int tick = firstCheckedTick; tick < ticksToRender; tick++) {
-                float measured = MeasuredIncrementAtTick(output, tick, scale);
+                float measured = MeasuredIncrementAtTick(output, tick, scale) / MasterHeadroomTrim;
                 Assert.That(measured, Is.EqualTo(expectedFactor).Within(0.01f),
                     $"tick {tick}: a note started during an active {semitones}-semitone bend measured increment {measured}, expected {expectedFactor}.");
             }
@@ -154,7 +161,7 @@ namespace Pooshit.AudioSynth.Tests {
 
             float[] output = postBendSink.ToArray();
             for (int tick = firstCheckedTick; tick < postBendTicks; tick++) {
-                float measured = MeasuredIncrementAtTick(output, tick, scale);
+                float measured = MeasuredIncrementAtTick(output, tick, scale) / MasterHeadroomTrim;
                 Assert.That(measured, Is.EqualTo(expectedFactor).Within(0.01f),
                     $"tick {tick}: a mid-note SetChannelPitchBend of {semitones} semitones measured increment {measured}, expected {expectedFactor}.");
             }

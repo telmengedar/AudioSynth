@@ -20,6 +20,13 @@ namespace Pooshit.AudioSynth.Tests {
         const int SampleRate = 44100;
         const int SettleFrames = 500;
 
+        /// <summary>
+        /// Mirrors <c>Synthesizer.MasterHeadroomTrim</c> (DiVoid BUG #7212, design #7213): every render
+        /// goes through the master bus, so <see cref="RenderSettledLR"/> divides both channels by this
+        /// factor to recover the pre-trim L/R levels the absolute-magnitude assertions expect.
+        /// </summary>
+        const float MasterHeadroomTrim = 0.5f;
+
         static SynthesizerOptions StereoOptions() => new SynthesizerOptions(SampleRate, 2, 64, 16);
 
         static SampleRegion BuildDcRegion(float value, int length, float pan) {
@@ -43,7 +50,7 @@ namespace Pooshit.AudioSynth.Tests {
 
             float[] samples = sink.ToArray();
             int lastFrameBase = (SettleFrames - 1) * 2;
-            return (samples[lastFrameBase], samples[lastFrameBase + 1]);
+            return (samples[lastFrameBase] / MasterHeadroomTrim, samples[lastFrameBase + 1] / MasterHeadroomTrim);
         }
 
         [Test]

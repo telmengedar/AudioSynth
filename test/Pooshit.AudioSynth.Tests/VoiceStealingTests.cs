@@ -32,6 +32,13 @@ namespace Pooshit.AudioSynth.Tests {
         /// <summary>Trailing window, in frames, averaged to measure "what is sounding right now".</summary>
         const int MeasureWindowFrames = 50;
 
+        /// <summary>
+        /// Mirrors <c>Synthesizer.MasterHeadroomTrim</c> (DiVoid BUG #7212, design #7213): every render goes
+        /// through the master bus, so victim-policy assertions divide the measured level by this factor to
+        /// recover the pre-trim level before comparing against the raw summed DC expectations.
+        /// </summary>
+        const float MasterHeadroomTrim = 0.5f;
+
         static SynthesizerOptions MonoOptions(int maxVoices) => new SynthesizerOptions(SampleRate, 1, 64, maxVoices);
 
         static SampleRegion BuildSustainedDcRegion(float value, int length) {
@@ -73,7 +80,7 @@ namespace Pooshit.AudioSynth.Tests {
             synth.NoteOn(maxVoices, 60, 127);
             OfflineRenderer.Render(synth, sink, StealSettleFrames);
 
-            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames);
+            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames) / MasterHeadroomTrim;
             float noStealLevel = maxVoices * heldValue;
             TestContext.WriteLine($"Trailing level after the 5th NoteOn past a full pool: {level:F6} " +
                                    $"(no-steal baseline would stay at {noStealLevel:F6}).");
@@ -105,7 +112,7 @@ namespace Pooshit.AudioSynth.Tests {
             synth.NoteOn(maxVoices, 60, 127);
             OfflineRenderer.Render(synth, sink, StealSettleFrames);
 
-            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames);
+            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames) / MasterHeadroomTrim;
             float correctVictimLevel = (maxVoices - 1) * heldValue + newValue;
             float wrongVictimLevel = (maxVoices - 2) * heldValue + newValue;
             TestContext.WriteLine($"Trailing level: {level:F6} (released-victim expectation {correctVictimLevel:F6}, " +
@@ -140,7 +147,7 @@ namespace Pooshit.AudioSynth.Tests {
             synth.NoteOn(maxVoices, 60, 127);
             OfflineRenderer.Render(synth, sink, StealSettleFrames);
 
-            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames);
+            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames) / MasterHeadroomTrim;
             float correctVictimLevel = (maxVoices - 1) * loudValue + newValue;
             float wrongVictimLevel = quietValue + (maxVoices - 2) * loudValue + newValue;
             TestContext.WriteLine($"Trailing level: {level:F6} (quietest-victim expectation {correctVictimLevel:F6}, " +
@@ -173,7 +180,7 @@ namespace Pooshit.AudioSynth.Tests {
             synth.NoteOn(maxVoices, 60, 127);
             OfflineRenderer.Render(synth, sink, StealSettleFrames);
 
-            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames);
+            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames) / MasterHeadroomTrim;
             float oldestReclaimedLevel = heldValues[1] + heldValues[2] + heldValues[3] + newValue;
             float newestReclaimedLevel = heldValues[0] + heldValues[1] + heldValues[2] + newValue;
             TestContext.WriteLine($"Trailing level: {level:F6} (oldest-reclaimed expectation {oldestReclaimedLevel:F6}, " +
