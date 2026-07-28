@@ -186,16 +186,14 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("No click (design §9, INV-1): forcing a steal across a full loud pool never introduces " +
                      "a large sample-to-sample discontinuity — both the outgoing fade and the incoming " +
-                     "note's fresh onset stay ramp-limited.")]
+                     "note's fresh onset stay ramp-limited. The delta threshold sits comfortably above the " +
+                     "bounded per-frame ramp step (~1/220 of the ramp's own gain range, times a single " +
+                     "voice's amplitude) and comfortably below the jump a real instantaneous slot swap would " +
+                     "produce, so it discriminates a click without being sensitive to floating-point noise.")]
         public void NoteOn_PoolFull_ForcedSteal_HasNoLargeSampleToSampleDiscontinuity() {
             const int maxVoices = 4;
             const float loudValue = 0.6f;
             const float newValue = 0.6f;
-
-            // A real click (an instantaneous slot swap) would jump by close to a full voice's DC amplitude
-            // in a single sample; this threshold is comfortably above the bounded per-frame ramp step
-            // (~1/220 of the ramp's own gain range, times a single voice's amplitude) and comfortably below
-            // that jump, so it discriminates a click without being sensitive to floating-point noise.
             const float maxAllowedDelta = 0.05f;
 
             SynthesizerOptions options = MonoOptions(maxVoices);
