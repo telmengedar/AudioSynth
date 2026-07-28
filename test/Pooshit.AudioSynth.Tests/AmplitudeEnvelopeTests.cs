@@ -17,6 +17,13 @@ namespace Pooshit.AudioSynth.Tests {
             float decay = 0f, float sustain = 1f, float release = 0.01f) =>
             new EnvelopeParameters(delay, attack, hold, decay, sustain, release);
 
+        static float AdvanceN(ref AmplitudeEnvelope envelope, int frames) {
+            float level = 0f;
+            for (int i = 0; i < frames; i++)
+                level = envelope.AdvanceFrame();
+            return level;
+        }
+
         [Test]
         [Description("Attack onset ramps up in small steps from ~0 rather than jumping to full scale.")]
         public void Attack_RampsFromZero_NoOnsetJump() {
@@ -144,6 +151,66 @@ namespace Pooshit.AudioSynth.Tests {
                 "mid-attack release must fade downward from the partial level.");
             Assert.That(firstReleaseFrame, Is.GreaterThan(0f),
                 "mid-attack release must not jump straight to zero.");
+        }
+
+        [Test]
+        [Description("Release decays geometrically (constant successive-level ratio), not linearly (constant difference) — the exponential-shape proof for BUG #7184.")]
+        public void Release_IsExponential_ConstantRatioNotConstantDifference() {
+            AmplitudeEnvelope envelope = new AmplitudeEnvelope(
+                Params(attack: 0.001f, sustain: 1f, release: 0.2f), SampleRate);
+
+            for (int i = 0; i < 200; i++)
+                envelope.AdvanceFrame();
+
+            envelope.Release();
+
+            const int step = 1000;
+            float l1 = AdvanceN(ref envelope, step);
+            float l2 = AdvanceN(ref envelope, step);
+            float l3 = AdvanceN(ref envelope, step);
+            float l4 = AdvanceN(ref envelope, step);
+
+            float r1 = l2 / l1;
+            float r2 = l3 / l2;
+            float r3 = l4 / l3;
+            Assert.That(r2, Is.EqualTo(r1).Within(0.01f), $"successive release ratios must be constant; r1={r1}, r2={r2}.");
+            Assert.That(r3, Is.EqualTo(r1).Within(0.01f), $"successive release ratios must be constant; r1={r1}, r3={r3}.");
+
+            float d1 = l1 - l2;
+            float d2 = l2 - l3;
+            float d3 = l3 - l4;
+            Assert.That(d2, Is.LessThan(d1), "exponential release: successive differences shrink; a linear fade would keep them equal.");
+            Assert.That(d3, Is.LessThan(d2), "exponential release: successive differences shrink; a linear fade would keep them equal.");
+        }
+
+        [Test]
+        [Description("Decay falls geometrically toward the sustain level (constant successive-level ratio), not linearly.")]
+        public void Decay_IsExponential_ConstantRatio() {
+            AmplitudeEnvelope envelope = new AmplitudeEnvelope(
+                Params(attack: 0.001f, hold: 0f, decay: 0.2f, sustain: 0.25f), SampleRate);
+
+            AdvanceN(ref envelope, 100);
+            Assert.That(envelope.Stage, Is.EqualTo(EnvelopeStage.Decay), "setup must land in the decay stage.");
+
+            const int step = 1000;
+            float l1 = AdvanceN(ref envelope, step);
+            float l2 = AdvanceN(ref envelope, step);
+            float l3 = AdvanceN(ref envelope, step);
+            float l4 = AdvanceN(ref envelope, step);
+
+            Assert.That(l4, Is.GreaterThan(0.25f), "samples must be taken while still decaying, above the sustain floor.");
+
+            float r1 = l2 / l1;
+            float r2 = l3 / l2;
+            float r3 = l4 / l3;
+            Assert.That(r2, Is.EqualTo(r1).Within(0.01f), $"successive decay ratios must be constant; r1={r1}, r2={r2}.");
+            Assert.That(r3, Is.EqualTo(r1).Within(0.01f), $"successive decay ratios must be constant; r1={r1}, r3={r3}.");
+
+            float d1 = l1 - l2;
+            float d2 = l2 - l3;
+            float d3 = l3 - l4;
+            Assert.That(d2, Is.LessThan(d1), "exponential decay: successive differences shrink; a linear decay would keep them equal.");
+            Assert.That(d3, Is.LessThan(d2), "exponential decay: successive differences shrink; a linear decay would keep them equal.");
         }
 
         [Test]

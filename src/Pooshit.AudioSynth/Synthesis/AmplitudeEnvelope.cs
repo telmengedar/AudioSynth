@@ -4,12 +4,20 @@ namespace Pooshit.AudioSynth.Synthesis {
 
     /// <summary>
     /// Per-frame DAHDSR volume envelope: advances one frame at a time through delay, attack, hold,
-    /// decay, sustain and release, producing the note's amplitude contour in the range [0, 1].  Stage
-    /// levels are linear and advanced by a fixed per-frame step, so block size is never an input and
-    /// the contour is free of block-boundary steps (INV-1).  It is a mutable struct advanced in place,
-    /// like <see cref="GainRamp"/>; copying it by value loses the in-flight stage state.
+    /// decay, sustain and release, producing the note's amplitude contour in the range [0, 1].  Attack
+    /// is linear; decay and release advance geometrically (a fixed per-frame multiply), which is the
+    /// SF2 linear-in-dB shape — notes damp naturally and clear to silence.  The advance is per-frame, so
+    /// block size is never an input and the contour is free of block-boundary steps (INV-1).  It is a
+    /// mutable struct advanced in place, like <see cref="GainRamp"/>; copying it by value loses the
+    /// in-flight stage state.
     /// </summary>
     public struct AmplitudeEnvelope {
+
+        /// <summary>
+        /// Linear amplitude treated as silence (≈ −100 dB) for terminating the geometric decay and
+        /// release: the level below which the remaining tail is inaudible and safe to snap to the target.
+        /// </summary>
+        const float SilenceFloorLinear = 1e-5f;
 
         readonly int delayFrames;
         readonly int attackFrames;
@@ -17,13 +25,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         readonly int decayFrames;
         readonly int releaseFrames;
         readonly float attackStep;
-        readonly float decayStep;
+        readonly float decayFactor;
+        readonly float releaseFactor;
         readonly float sustainLevel;
 
         EnvelopeStage stage;
         float level;
         int framesRemaining;
-        float releaseStep;
 
         /// <summary>
         /// Creates an <see cref="AmplitudeEnvelope"/> positioned at the start of its delay stage.
@@ -42,12 +50,12 @@ namespace Pooshit.AudioSynth.Synthesis {
             sustainLevel = Clamp01(parameters.SustainLevel);
 
             attackStep = attackFrames > 0 ? 1f / attackFrames : 0f;
-            decayStep = decayFrames > 0 ? (1f - sustainLevel) / decayFrames : 0f;
+            decayFactor = decayFrames > 0 ? GeometricStepFactor(Math.Max(sustainLevel, SilenceFloorLinear), decayFrames) : 0f;
+            releaseFactor = releaseFrames > 0 ? GeometricStepFactor(SilenceFloorLinear, releaseFrames) : 0f;
 
             stage = EnvelopeStage.Delay;
             level = 0f;
             framesRemaining = 0;
-            releaseStep = 0f;
 
             BeginStage(EnvelopeStage.Delay);
         }
@@ -88,7 +96,7 @@ namespace Pooshit.AudioSynth.Synthesis {
                     break;
 
                 case EnvelopeStage.Decay:
-                    level -= decayStep;
+                    level *= decayFactor;
                     if (level < sustainLevel)
                         level = sustainLevel;
                     if (--framesRemaining <= 0) {
@@ -98,9 +106,7 @@ namespace Pooshit.AudioSynth.Synthesis {
                     break;
 
                 case EnvelopeStage.Release:
-                    level -= releaseStep;
-                    if (level < 0f)
-                        level = 0f;
+                    level *= releaseFactor;
                     if (--framesRemaining <= 0) {
                         level = 0f;
                         BeginStage(EnvelopeStage.Finished);
@@ -166,7 +172,6 @@ namespace Pooshit.AudioSynth.Synthesis {
                 case EnvelopeStage.Release:
                     stage = EnvelopeStage.Release;
                     framesRemaining = releaseFrames;
-                    releaseStep = releaseFrames > 0 ? level / releaseFrames : 0f;
                     if (releaseFrames <= 0) {
                         level = 0f;
                         BeginStage(EnvelopeStage.Finished);
@@ -179,6 +184,15 @@ namespace Pooshit.AudioSynth.Synthesis {
                     framesRemaining = 0;
                     break;
             }
+        }
+
+        /// <summary>
+        /// Per-frame multiplier that carries a level to <paramref name="targetRatio"/> times its start
+        /// over <paramref name="frames"/> frames.  A constant multiplicative step is a constant
+        /// dB-per-frame step, giving the SF2 linear-in-dB (exponential) decay and release shape.
+        /// </summary>
+        static float GeometricStepFactor(float targetRatio, int frames) {
+            return (float)Math.Pow(targetRatio, 1.0 / frames);
         }
 
         static int FramesFromSeconds(float seconds, int sampleRate) {
