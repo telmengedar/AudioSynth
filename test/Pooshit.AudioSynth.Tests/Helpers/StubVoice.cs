@@ -31,6 +31,12 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         public float ChorusSend => 0f;
 
         /// <inheritdoc/>
+        public float CurrentGain => 0f;
+
+        /// <inheritdoc/>
+        public void FastFadeForSteal() { }
+
+        /// <inheritdoc/>
         public int RenderBlock(Span<float> block) {
             block.Clear();
             return block.Length;

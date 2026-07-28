@@ -29,8 +29,13 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// <see cref="NoteOff"/> on the channel marks the matching <see cref="VoiceSlot.PendingRelease"/>
     /// instead of releasing the voice, and disengaging the pedal sweeps the pool releasing every deferred
     /// voice on that channel; a channel that never sustains takes the unchanged immediate-release path
-    /// bit-for-bit. All buffers, including both effects' delay lines and send buses, are ctor-sized;
-    /// steady-state <see cref="Read"/> allocates nothing.
+    /// bit-for-bit. When the voice pool is full, <see cref="NoteOn"/> no longer drops the note: it steals
+    /// the best-candidate slot instead (released voices first, then the quietest sounding voice, then the
+    /// oldest), fast-fading that voice to silence while it keeps rendering through this same unchanged mix
+    /// loop, and only starting the new note in-place once the fade reaches silence — a song that never
+    /// exceeds the pool never takes this path and renders bit-for-bit as before. All buffers, including
+    /// both effects' delay lines and send buses, are ctor-sized; steady-state <see cref="Read"/> allocates
+    /// nothing.
     /// </summary>
     public sealed class Synthesizer : ISynthesizer {
 
@@ -44,6 +49,12 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         /// <summary>Output channel count for which per-voice equal-power stereo placement applies.</summary>
         const int StereoChannelCount = 2;
+
+        /// <summary>
+        /// <see cref="VoiceSlot.PendingChannel"/> sentinel meaning "no note is deferred behind this slot's
+        /// declick fade-out".
+        /// </summary>
+        const int NoPendingNote = -1;
 
         /// <summary>
         /// Quarter-turn used by <see cref="EqualPowerGains"/> to map pan ∈ [-1,1] onto the quarter-circle
@@ -71,6 +82,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         readonly Chorus? chorus;
         readonly bool perChannelReverb;
         readonly bool perChannelChorus;
+        int nextAge;
 
         /// <summary>
         /// Creates a <see cref="Synthesizer"/> with the given options; <paramref name="defaultPatch"/> fills
@@ -195,6 +207,7 @@ namespace Pooshit.AudioSynth.Synthesis {
                 if (slot.IsOccupied && slot.Channel == channel && slot.PendingRelease) {
                     slot.Voice!.Release();
                     slot.PendingRelease = false;
+                    slot.Released = true;
                 }
             }
         }
@@ -205,18 +218,20 @@ namespace Pooshit.AudioSynth.Synthesis {
                 throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
 
             int freeSlot = FindFreeSlot();
-            if (freeSlot < 0)
+            if (freeSlot >= 0) {
+                StartVoiceInSlot(freeSlot, channel, key, velocity);
+                return;
+            }
+
+            int victim = FindStealVictim();
+            if (victim < 0)
                 return;
 
-            IVoice voice = channelPatch[channel].StartVoice(key, velocity);
-            voice.SetPitchBend(channelBendFactor[channel]);
-            voice.SetModWheel(channelModWheel[channel]);
-            ref VoiceSlot slot = ref pool[freeSlot];
-            slot.IsOccupied = true;
-            slot.Channel = channel;
-            slot.Key = key;
-            slot.Voice = voice;
-            slot.PendingRelease = false;
+            ref VoiceSlot slot = ref pool[victim];
+            slot.Voice!.FastFadeForSteal();
+            slot.PendingChannel = channel;
+            slot.PendingKey = key;
+            slot.PendingVelocity = velocity;
         }
 
         /// <inheritdoc/>
@@ -225,12 +240,83 @@ namespace Pooshit.AudioSynth.Synthesis {
             for (int i = 0; i < pool.Length; i++) {
                 ref VoiceSlot slot = ref pool[i];
                 if (slot.IsOccupied && slot.Channel == channel && slot.Key == key) {
-                    if (sustained)
+                    if (sustained) {
                         slot.PendingRelease = true;
-                    else
+                    } else {
                         slot.Voice!.Release();
+                        slot.Released = true;
+                    }
                 }
             }
+        }
+
+        /// <summary>
+        /// Starts a new voice for <paramref name="channel"/>/<paramref name="key"/>/<paramref name="velocity"/>
+        /// in <paramref name="slotIndex"/>, applying the channel's live pitch-bend and mod-wheel exactly as
+        /// a fresh <see cref="NoteOn"/> does, and stamping a fresh age. Shared by the free-slot path and the
+        /// deferred pending-note start (<see cref="Read"/>) so both allocate a voice identically.
+        /// </summary>
+        void StartVoiceInSlot(int slotIndex, int channel, int key, int velocity) {
+            IVoice voice = channelPatch[channel].StartVoice(key, velocity);
+            voice.SetPitchBend(channelBendFactor[channel]);
+            voice.SetModWheel(channelModWheel[channel]);
+            ref VoiceSlot slot = ref pool[slotIndex];
+            slot.IsOccupied = true;
+            slot.Channel = channel;
+            slot.Key = key;
+            slot.Voice = voice;
+            slot.PendingRelease = false;
+            slot.Released = false;
+            slot.Age = nextAge++;
+            slot.PendingChannel = NoPendingNote;
+        }
+
+        /// <summary>
+        /// Scans the occupied, non-draining slots for the best voice-stealing victim: the smallest
+        /// lexicographic tuple <c>(releasedTier, currentGain, age)</c> — a released voice (immediate
+        /// release or a sustain-deferred release) dies before any still-held voice; among voices tied on
+        /// that tier the quietest dies first; age breaks remaining ties toward the oldest. Slots already
+        /// holding a pending note are excluded — they are already committed to a steal and must not lose
+        /// it. Returns -1 when every occupied slot is already draining (pathological: more note-ons than
+        /// the pool has slots inside one render).
+        /// </summary>
+        int FindStealVictim() {
+            int best = -1;
+            int bestReleasedTier = 0;
+            float bestGain = 0f;
+            int bestAge = 0;
+
+            for (int i = 0; i < pool.Length; i++) {
+                ref VoiceSlot slot = ref pool[i];
+                if (!slot.IsOccupied || slot.PendingChannel != NoPendingNote)
+                    continue;
+
+                int releasedTier = slot.Released || slot.PendingRelease ? 0 : 1;
+                float gain = slot.Voice!.CurrentGain;
+                int age = slot.Age;
+
+                if (best < 0 || IsBetterVictim(releasedTier, gain, age, bestReleasedTier, bestGain, bestAge)) {
+                    best = i;
+                    bestReleasedTier = releasedTier;
+                    bestGain = gain;
+                    bestAge = age;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>
+        /// Lexicographic comparison for <see cref="FindStealVictim"/>: smaller <paramref name="releasedTier"/>
+        /// wins outright; a tie falls through to smaller <paramref name="gain"/>; a further tie falls
+        /// through to smaller <paramref name="age"/>.
+        /// </summary>
+        static bool IsBetterVictim(int releasedTier, float gain, int age, int bestReleasedTier, float bestGain, int bestAge) {
+            if (releasedTier != bestReleasedTier)
+                return releasedTier < bestReleasedTier;
+            if (gain != bestGain)
+                return gain < bestGain;
+            return age < bestAge;
         }
 
         /// <inheritdoc/>
@@ -322,8 +408,12 @@ namespace Pooshit.AudioSynth.Synthesis {
                     }
 
                     if (!slot.Voice.IsActive) {
-                        slot.IsOccupied = false;
-                        slot.Voice = null;
+                        if (slot.PendingChannel != NoPendingNote)
+                            StartVoiceInSlot(v, slot.PendingChannel, slot.PendingKey, slot.PendingVelocity);
+                        else {
+                            slot.IsOccupied = false;
+                            slot.Voice = null;
+                        }
                     }
                 }
 

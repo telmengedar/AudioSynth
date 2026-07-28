@@ -53,5 +53,21 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// at mix time (clamped to [0,1]). <c>0</c> for inactive/silent voices.
         /// </summary>
         float ChorusSend { get; }
+
+        /// <summary>
+        /// The amplitude the voice is currently producing (its last-rendered frame's envelope ×
+        /// gain-ramp × tremolo product), in [0,1]; the engine reads this to pick the quietest sounding
+        /// victim when the voice pool is full and a note must be stolen. <c>0</c> for inactive voices.
+        /// Reading never mutates the voice.
+        /// </summary>
+        float CurrentGain { get; }
+
+        /// <summary>
+        /// Instructs the voice to ramp to silence over a short, click-free window (reusing its own
+        /// gain smoothing) and then become inactive, regardless of its natural release time; called by
+        /// the engine when this voice's slot is reclaimed for a new note. Idempotent, and a no-op on an
+        /// already-inactive voice.
+        /// </summary>
+        void FastFadeForSteal();
     }
 }
