@@ -20,7 +20,7 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// treating every voice as sending fully, since <c>master[i] += wetL</c> where wet was computed from
     /// <c>master</c> itself.
     /// </summary>
-    public sealed class Reverb {
+    public sealed class Reverb : IAudioEffect {
 
         /// <summary>Reference sample rate the Freeverb delay-line tunings below are defined at.</summary>
         const int ReferenceSampleRate = 44100;

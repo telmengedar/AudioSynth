@@ -113,6 +113,9 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         public float ReverbSend => region.ReverbSend;
 
         /// <inheritdoc/>
+        public float ChorusSend => region.ChorusSend;
+
+        /// <inheritdoc/>
         public int RenderBlock(Span<float> block) {
             if (!isActive) {
                 block.Clear();
