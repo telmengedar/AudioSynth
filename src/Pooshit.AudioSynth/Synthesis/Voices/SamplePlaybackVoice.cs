@@ -50,11 +50,13 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         float modWheelAmount;
         float tremoloCurrent;
         float tremoloStep;
+        float frameGain;
         int controlTicksRemaining;
         double readPos;
         bool isActive;
         bool released;
         bool sampleExhausted;
+        bool stealing;
 
         /// <summary>
         /// Creates a <see cref="SamplePlaybackVoice"/>.
@@ -80,11 +82,13 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
             modWheelAmount = 0f;
             tremoloCurrent = 1f;
             tremoloStep = 0f;
+            frameGain = 0f;
             controlTicksRemaining = 0;
             readPos = region.Start;
             isActive = true;
             released = false;
             sampleExhausted = false;
+            stealing = false;
         }
 
         /// <inheritdoc/>
@@ -94,6 +98,17 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         public void Release() {
             released = true;
             envelope.Release();
+        }
+
+        /// <inheritdoc/>
+        public float CurrentGain => isActive ? frameGain : 0f;
+
+        /// <inheritdoc/>
+        public void FastFadeForSteal() {
+            if (!isActive || stealing)
+                return;
+            stealing = true;
+            gainRamp.SetTarget(0f);
         }
 
         /// <inheritdoc/>
@@ -157,6 +172,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
 
                 tremoloCurrent += tremoloStep;
                 float gain = envelope.AdvanceFrame() * gainRamp.AdvanceFrame() * tremoloCurrent;
+                frameGain = gain;
 
                 float sample;
                 if (sampleExhausted) {
@@ -171,6 +187,13 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
                 block[i] = sample * gain;
 
                 if (released && envelope.IsFinished) {
+                    for (int j = i + 1; j < count; j++)
+                        block[j] = 0f;
+                    isActive = false;
+                    return count;
+                }
+
+                if (stealing && gainRamp.IsAtTarget) {
                     for (int j = i + 1; j < count; j++)
                         block[j] = 0f;
                     isActive = false;
