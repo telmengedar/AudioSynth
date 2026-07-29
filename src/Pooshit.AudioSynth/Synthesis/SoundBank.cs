@@ -49,9 +49,10 @@ namespace Pooshit.AudioSynth.Synthesis {
         public int Count => patches.Length;
 
         /// <summary>
-        /// Resolves (bank, program) via the fallback chain: exact match, same-bank lowest present
-        /// program, melodic default (bank 0/program 0), any percussion (bank 128) preset, then the
-        /// first loaded patch. Never null; throws only when the bank holds no patches at all.
+        /// Resolves (bank, program) via the fallback chain: exact match, bank-0 same program (variation
+        /// banks only — MIDI Bank Select regression guard, design #7251 §8.2), same-bank lowest present
+        /// program, melodic default (bank 0/program 0), any percussion (bank 128) preset, then the first
+        /// loaded patch. Never null; throws only when the bank holds no patches at all.
         /// </summary>
         public IPatch GetPatch(int bank, int program) {
             if (patches.Length == 0)
@@ -60,6 +61,8 @@ namespace Pooshit.AudioSynth.Synthesis {
 
             if (TryExactMatch(bank, program, out IPatch? exact))
                 return exact!;
+            if (bank != MelodicBank && bank != PercussionBank && TryExactMatch(MelodicBank, program, out IPatch? bankZeroSameProgram))
+                return bankZeroSameProgram!;
             if (TryLowestInBank(bank, out IPatch? lowestInBank))
                 return lowestInBank!;
             if (bank != PercussionBank && TryExactMatch(MelodicBank, DefaultProgram, out IPatch? melodicDefault))
