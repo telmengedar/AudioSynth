@@ -173,5 +173,81 @@ namespace Pooshit.AudioSynth.Tests {
                 "the parked pending note must be cancelled by SilenceChannel, not started once the victim's " +
                 "fade completes.");
         }
+
+        /// <summary>
+        /// Frames rendered after a steal-triggering NoteOn so a NOT-cancelled parked note has time to
+        /// start (once the victim's ~5ms fade completes) and its own DAHDSR attack to fully settle,
+        /// mirroring <c>VoiceStealingTests.StealSettleFrames</c>.
+        /// </summary>
+        const int StealSettleFrames = 800;
+
+        [Test]
+        [Description("Task #7249 W1/W3 (over-cancel): during a cross-channel steal, a slot's CURRENT voice " +
+                     "can belong to a different channel than the note PARKED behind its fade. Silencing the " +
+                     "OUTGOING voice's channel must fast-fade that voice but must NOT cancel the parked note " +
+                     "for the OTHER channel -- it must still start and sound once the fade completes.")]
+        public void SilenceChannel_ParkedPendingSteal_ForDifferentChannel_IsNotDropped() {
+            const float victimValue = 0.5f;
+            const float parkedValue = 0.6f;
+            SynthesizerOptions options = MonoOptions(maxVoices: 1);
+            Synthesizer synth = new Synthesizer(options, new SamplePatch(BuildLongReleaseDcRegion(victimValue, 4096), SampleRate));
+            InMemoryAudioSink sink = new InMemoryAudioSink(synth.Format);
+
+            // Channel 0 occupies the only slot (it will be the outgoing/victim voice).
+            synth.NoteOn(0, 60, 127);
+            OfflineRenderer.Render(synth, sink, SettleFrames);
+
+            // Channel 1's NoteOn forces a steal: the slot's Channel stays 0 (the fading victim) while
+            // PendingChannel becomes 1 (the parked incoming note) -- exactly the asymmetric case W1 covers.
+            synth.SetChannelPatch(1, new SamplePatch(BuildLongReleaseDcRegion(parkedValue, 4096), SampleRate));
+            synth.NoteOn(1, 61, 127);
+
+            // Silencing channel 0 -- the slot's CURRENT (victim) channel -- must fast-fade that voice but
+            // must not touch channel 1's parked note (over-cancel would key this off slot.Channel alone).
+            synth.SilenceChannel(0);
+            OfflineRenderer.Render(synth, sink, StealSettleFrames);
+
+            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames);
+            TestContext.WriteLine($"Trailing level after SilenceChannel(0) with channel 1's note parked behind " +
+                                   $"its fade: {level:F6} (expected ~{parkedValue:F6}, the parked note settled).");
+            Assert.That(level, Is.EqualTo(parkedValue).Within(0.05f),
+                "SilenceChannel(0) must not cancel channel 1's parked note merely because it is parked " +
+                "behind channel 0's fading voice; it must start and settle once the fade completes.");
+        }
+
+        [Test]
+        [Description("Task #7249 W1/W3 (under-cancel / resurrection): a note parked behind a DIFFERENT " +
+                     "channel's fading victim, but itself destined for the channel being silenced, must be " +
+                     "cancelled -- otherwise it resurrects after All Sound Off, which SilenceChannel exists " +
+                     "to prevent (design §12).")]
+        public void SilenceChannel_ParkedPendingSteal_TargetingSilencedChannel_IsCancelled_ViaOtherVictimSlot() {
+            const float victimValue = 0.5f;
+            const float parkedValue = 0.6f;
+            SynthesizerOptions options = MonoOptions(maxVoices: 1);
+            Synthesizer synth = new Synthesizer(options, new SamplePatch(BuildLongReleaseDcRegion(victimValue, 4096), SampleRate));
+            InMemoryAudioSink sink = new InMemoryAudioSink(synth.Format);
+
+            // Channel 0 occupies the only slot (the victim voice).
+            synth.NoteOn(0, 60, 127);
+            OfflineRenderer.Render(synth, sink, SettleFrames);
+
+            // Channel 1's NoteOn forces a steal: slot.Channel stays 0 (the fading victim), slot.PendingChannel
+            // becomes 1 -- the parked note is destined for channel 1, not the slot's current channel.
+            synth.SetChannelPatch(1, new SamplePatch(BuildLongReleaseDcRegion(parkedValue, 4096), SampleRate));
+            synth.NoteOn(1, 61, 127);
+
+            // Silencing channel 1 -- the PARKED note's target channel, NOT the slot's current victim
+            // channel (0) -- must still cancel the parked note (under-cancel would skip this slot entirely
+            // because slot.Channel == 0 != 1, letting the note resurrect once the victim's fade completes).
+            synth.SilenceChannel(1);
+            OfflineRenderer.Render(synth, sink, PostSilenceFrames);
+
+            float level = TrailingMeanAbs(sink.ToArray(), MeasureWindowFrames);
+            TestContext.WriteLine($"Trailing level after SilenceChannel(1) cancels a parked note behind " +
+                                   $"channel 0's fading victim: {level:F6}.");
+            Assert.That(level, Is.LessThan(0.05f),
+                "SilenceChannel(1) must cancel channel 1's parked note even though it sits behind channel " +
+                "0's fading voice; the note must not resurrect once that fade completes.");
+        }
     }
 }
