@@ -256,11 +256,21 @@ namespace Pooshit.AudioSynth.Synthesis {
 
             for (int i = 0; i < pool.Length; i++) {
                 ref VoiceSlot slot = ref pool[i];
-                if (!slot.IsOccupied || slot.Channel != channel)
+                if (!slot.IsOccupied)
                     continue;
 
-                slot.Voice!.FastFadeForSteal();
-                slot.PendingChannel = NoPendingNote;
+                // Two independent conditions on the same slot (task #7249, W1): the slot's CURRENT voice
+                // (slot.Channel) and a note PARKED behind its steal fade (slot.PendingChannel) can target
+                // different channels, so each must be checked on its own -- a slot may match one, both, or
+                // neither. Gating the pending-cancel on slot.Channel==channel (as before) could drop a
+                // parked note bound for a different channel (over-cancel) or miss one bound for THIS
+                // channel when it sits behind a different channel's fading victim, letting it resurrect
+                // after All Sound Off (under-cancel, the exact resurrection this method exists to prevent).
+                if (slot.Channel == channel)
+                    slot.Voice!.FastFadeForSteal();
+
+                if (slot.PendingChannel == channel)
+                    slot.PendingChannel = NoPendingNote;
             }
         }
 

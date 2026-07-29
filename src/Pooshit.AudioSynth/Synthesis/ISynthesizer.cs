@@ -79,10 +79,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <summary>
         /// Fast-fades every currently-sounding voice on the channel to silence over the standard
         /// click-free declick window (typically driven by MIDI CC120, All Sound Off), regardless of
-        /// the channel's sustain-pedal state; no envelope release runs. Any note deferred behind a
-        /// slot's own steal fade on the channel is cancelled so it cannot spring to life once the
-        /// fade completes. A no-op on a channel with no occupied voices; other channels are untouched.
-        /// MIDI-neutral: reuses the same declick path as voice-stealing.
+        /// the channel's sustain-pedal state; no envelope release runs. Independently of which voice is
+        /// fading, any note parked behind a steal fade and DESTINED for this channel is cancelled so it
+        /// cannot spring to life once the fade completes -- the parked note's target channel, not the
+        /// fading slot's current (victim) channel, is what is keyed on, since a steal can park a note for
+        /// one channel behind another channel's outgoing voice. A no-op on a channel with no occupied
+        /// voices; other channels are untouched. MIDI-neutral: reuses the same declick path as
+        /// voice-stealing.
         /// </summary>
         void SilenceChannel(int channel);
 
