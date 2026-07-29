@@ -5,9 +5,9 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
     /// <summary>
     /// Resolves a MIDI (key, velocity) pair through the SF2 two-level zone model to a
-    /// <see cref="SampleRegion"/>, implementing the v1 generator subset.  This is the single home
-    /// for all SF2 interpretation; later generator families (preset-level addition, offset generators,
-    /// attenuation, modulation) attach here.
+    /// <see cref="SampleRegion"/>, implementing the v1 generator subset plus preset-level +
+    /// instrument-level InitialAttenuation(48) accumulation.  This is the single home for all SF2
+    /// interpretation; later generator families (offset generators, modulation) attach here.
     /// </summary>
     /// <remarks>
     /// Resolution is deterministic, rate-independent, and defensive: structurally-valid-but-
@@ -73,9 +73,14 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             region = null;
             cacheKey = 0;
 
-            int instrIndex = FindInstrumentIndex(key, velocity);
+            int instrIndex = FindInstrumentIndex(key, velocity, out int presetZoneIndex);
             if (instrIndex < 0 || instrIndex >= instruments.Length)
                 return false;
+
+            Sf2Zone[] presetZones = preset.Zones;
+            Sf2Zone presetZone = presetZones[presetZoneIndex];
+            int presetGlobalZoneIndex = FindPresetGlobalZoneIndex(presetZones);
+            Sf2Zone? presetGlobalZone = presetGlobalZoneIndex >= 0 ? presetZones[presetGlobalZoneIndex] : null;
 
             Sf2Instrument instrument = instruments[instrIndex];
             Sf2Zone[] zones = instrument.Zones;
@@ -99,7 +104,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 if (sampleId < 0 || sampleId >= sampleHeaders.Length)
                     continue;
 
-                SampleRegion? built = BuildRegion(zone, globalZone, sampleId);
+                SampleRegion? built = BuildRegion(zone, globalZone, presetZone, presetGlobalZone, sampleId);
                 if (built is null)
                     continue;
 
@@ -111,7 +116,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             return false;
         }
 
-        int FindInstrumentIndex(int key, int velocity) {
+        int FindInstrumentIndex(int key, int velocity, out int presetZoneIndex) {
             Sf2Zone[] presetZones = preset.Zones;
             for (int i = 0; i < presetZones.Length; i++) {
                 Sf2Zone zone = presetZones[i];
@@ -132,8 +137,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                         continue;
                 }
 
+                presetZoneIndex = i;
                 return instrRaw;
             }
+            presetZoneIndex = -1;
             return -1;
         }
 
@@ -143,6 +150,24 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             Sf2Zone first = zones[0];
             foreach (Sf2Generator gen in first.Generators) {
                 if (gen.Type == Sf2GeneratorType.SampleID)
+                    return -1;
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// Locates the preset's global zone: SF2 §7.2/§8.2 identifies a preset zone as global when it
+        /// carries no <see cref="Sf2GeneratorType.Instrument"/> generator (the terminal/linking generator
+        /// for preset zones, mirroring how <see cref="FindInstrumentGlobalZoneIndex"/> uses the absence of
+        /// SampleID to identify an instrument zone as global). A global preset zone, if present, is always
+        /// zone 0.
+        /// </summary>
+        static int FindPresetGlobalZoneIndex(Sf2Zone[] zones) {
+            if (zones.Length == 0)
+                return -1;
+            Sf2Zone first = zones[0];
+            foreach (Sf2Generator gen in first.Generators) {
+                if (gen.Type == Sf2GeneratorType.Instrument)
                     return -1;
             }
             return 0;
@@ -168,7 +193,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             return true;
         }
 
-        SampleRegion? BuildRegion(Sf2Zone zone, Sf2Zone? globalZone, int sampleId) {
+        SampleRegion? BuildRegion(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone, int sampleId) {
             Sf2SampleHeader header = sampleHeaders[sampleId];
 
             int start = (int)header.Start;
@@ -207,6 +232,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             float reverbSend = BuildReverbSend(zone, globalZone);
             float chorusSend = BuildChorusSend(zone, globalZone);
             int exclusiveClass = GetEffectiveRaw(zone, globalZone, Sf2GeneratorType.ExclusiveClass, defaultValue: 0);
+            float initialAttenuationGain = BuildInitialAttenuationGain(zone, globalZone, presetZone, presetGlobalZone);
 
             return new SampleRegion(
                 floatPool,
@@ -224,7 +250,23 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 pan,
                 reverbSend,
                 chorusSend,
-                exclusiveClass);
+                exclusiveClass,
+                initialAttenuationGain);
+        }
+
+        /// <summary>
+        /// Reads generator 48 (InitialAttenuation, centibels) at both the instrument-zone level and the
+        /// preset-zone level and sums them — SF2 spec §8.1.2 defines InitialAttenuation as additive across
+        /// the preset and instrument generator levels, unlike a plain override — then converts the total
+        /// to a linear gain via <see cref="CentibelsToLinear"/>, the same centibel-to-linear conversion and
+        /// [0, 1440] cB clamp already used for the volume envelope's sustain level. Absent gen-48 at both
+        /// levels sums to 0 cB, which maps to a gain of 1.0, so the region's amplitude is unchanged from
+        /// before this generator was read.
+        /// </summary>
+        static float BuildInitialAttenuationGain(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
+            int instrumentCentibels = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0);
+            int presetCentibels = GetEffectiveInt16(presetZone, presetGlobalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0);
+            return CentibelsToLinear(instrumentCentibels + presetCentibels);
         }
 
         /// <summary>
@@ -363,6 +405,14 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             return (float)seconds;
         }
 
+        /// <summary>
+        /// Converts a centibel attenuation amount to linear gain (<c>10^(-cB/200)</c>), clamped to the SF2
+        /// valid attenuation range [0, <see cref="MaxSustainAttenuationCentibels"/>] cB — a negative amount
+        /// is clamped up to 0 cB (full gain, 1.0) and an amount at or beyond the max is clamped down to
+        /// silence (0.0). Shared by the volume envelope's sustain level and <see cref="BuildInitialAttenuationGain"/>'s
+        /// region-level InitialAttenuation(48) gain, since both are SF2 centibel-attenuation quantities
+        /// under the same [0, 1440] cB bound.
+        /// </summary>
         static float CentibelsToLinear(int centibels) {
             if (centibels <= 0)
                 return 1f;

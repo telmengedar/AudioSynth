@@ -43,6 +43,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// every other sounding voice sharing the same class on the same channel (SF2 spec; e.g. GM
         /// hi-hats), a click-free choke the engine implements by reusing <see cref="IVoice.FastFadeForSteal"/>.
         /// </param>
+        /// <param name="initialAttenuationGain">
+        /// static per-region linear amplitude multiplier sourced from SF2 generator 48 (InitialAttenuation),
+        /// summed additively across the preset-zone and instrument-zone levels and converted from centibels
+        /// via <c>10^(-cB/200)</c>; defaults to <c>1f</c> (no attenuation), matching the gain an absent
+        /// gen-48 at both levels produces. Applied as a fixed multiplier alongside — not in place of —
+        /// velocity gain, channel gain, pan, and the volume envelope.
+        /// </param>
         public SampleRegion(
             float[] buffer,
             int start,
@@ -59,7 +66,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             float pan,
             float reverbSend = 1f,
             float chorusSend = 0f,
-            int exclusiveClass = 0) {
+            int exclusiveClass = 0,
+            float initialAttenuationGain = 1f) {
             if (buffer is null)
                 throw new ArgumentNullException(nameof(buffer));
             if (start < 0 || start >= buffer.Length)
@@ -92,6 +100,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             ReverbSend = reverbSend;
             ChorusSend = chorusSend;
             ExclusiveClass = exclusiveClass;
+            InitialAttenuationGain = initialAttenuationGain;
         }
 
         /// <summary>
@@ -177,5 +186,14 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// A non-zero value names a choke group matched, at note-onset, within the same MIDI channel.
         /// </summary>
         public int ExclusiveClass { get; }
+
+        /// <summary>
+        /// Static per-region linear amplitude multiplier sourced from SF2 generator 48 (InitialAttenuation),
+        /// summed additively across the preset-zone and instrument-zone levels; defaults to <c>1.0</c>
+        /// (no attenuation) when the generator is absent at both levels. Combined multiplicatively with
+        /// velocity gain to form the voice's target gain (<see cref="Patches.SamplePatch.StartVoice"/>) —
+        /// applied alongside, not in place of, channel gain, pan, and the volume envelope.
+        /// </summary>
+        public float InitialAttenuationGain { get; }
     }
 }

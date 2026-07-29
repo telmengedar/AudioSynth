@@ -5,8 +5,9 @@ namespace Pooshit.AudioSynth.Synthesis.Patches {
 
     /// <summary>
     /// <see cref="IPatch"/> that plays a fixed mono <see cref="SampleRegion"/>; <see cref="StartVoice"/>
-    /// computes the pitch increment for the played key and a concave <c>(velocity/127)²</c>
-    /// velocity-to-gain mapping (<see cref="VelocityToGain"/>), then constructs a
+    /// computes the pitch increment for the played key, a concave <c>(velocity/127)²</c>
+    /// velocity-to-gain mapping (<see cref="VelocityToGain"/>) scaled by the region's static
+    /// <see cref="SampleRegion.InitialAttenuationGain"/> (SF2 generator 48), then constructs a
     /// <see cref="SamplePlaybackVoice"/> ready to render.
     /// </summary>
     public sealed class SamplePatch : IPatch {
@@ -37,7 +38,7 @@ namespace Pooshit.AudioSynth.Synthesis.Patches {
         public IVoice StartVoice(int key, int velocity) {
             double semitones = (key - region.RootKey) + region.PitchCorrectionCents / 100.0;
             float pitchIncrement = (float)(Math.Pow(2.0, semitones / 12.0) * region.SourceSampleRate / (double)outputSampleRate);
-            float targetGain = VelocityToGain(velocity);
+            float targetGain = VelocityToGain(velocity) * region.InitialAttenuationGain;
             return new SamplePlaybackVoice(region, pitchIncrement, targetGain, outputSampleRate);
         }
 

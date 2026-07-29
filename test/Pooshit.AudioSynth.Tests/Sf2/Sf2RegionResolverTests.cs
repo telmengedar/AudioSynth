@@ -42,6 +42,10 @@ namespace Pooshit.AudioSynth.Tests {
         static Sf2Zone[] PresetZoneWithInstrument(int instrIndex = 0) =>
             new[] { Zone(Gen(Sf2GeneratorType.Instrument, (ushort)instrIndex)) };
 
+        static Sf2Zone[] PresetZoneWithInstrumentAndAttenuation(int instrIndex, short attenuationCentibels) =>
+            new[] { Zone(Gen(Sf2GeneratorType.Instrument, (ushort)instrIndex),
+                         Gen(Sf2GeneratorType.InitialAttenuation, (ushort)attenuationCentibels)) };
+
         static Sf2Zone InstrumentZone(int keyLo, int keyHi, params Sf2Generator[] extras) {
             ushort keyRangeAmount = (ushort)(keyLo | (keyHi << 8));
             Sf2Generator keyRange = Gen(Sf2GeneratorType.KeyRange, keyRangeAmount);
@@ -896,6 +900,109 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(found, Is.True);
             Assert.That(region!.ExclusiveClass, Is.EqualTo(5),
                 "local ExclusiveClass=5 must override global ExclusiveClass=3.");
+        }
+
+        [Test]
+        [Description("Absent InitialAttenuation(48) at both preset and instrument level leaves the region " +
+                     "gain unchanged at 1.0 (DiVoid #7269: no spurious attenuation).")]
+        public void TryResolve_NoInitialAttenuationGenerator_GainIsUnchangedAtOne() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(1f),
+                "Absent InitialAttenuation(48) at both levels must leave region gain at 1.0.");
+        }
+
+        [Test]
+        [Description("InitialAttenuation(48)=60 cB at the instrument level maps to a linear gain of ~0.5 " +
+                     "(10^(-60/200) ≈ 0.501).")]
+        public void TryResolve_InstrumentAttenuation60Centibels_MapsToHalfGain() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.5f).Within(0.005f),
+                "60 cB of attenuation must map to 10^(-60/200) ≈ 0.5.");
+        }
+
+        [Test]
+        [Description("InitialAttenuation(48)=100 cB at the instrument level maps to a linear gain of ~0.316.")]
+        public void TryResolve_InstrumentAttenuation100Centibels_MapsToExpectedGain() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 100));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.316f).Within(0.005f),
+                "100 cB (10 dB) of attenuation must map to 10^(-100/200) ≈ 0.316.");
+        }
+
+        [Test]
+        [Description("Preset-zone InitialAttenuation(48) and instrument-zone InitialAttenuation(48) accumulate " +
+                     "additively (SF2 §8.1.2), not by override: preset=40 cB + instrument=60 cB sums to 100 cB.")]
+        public void TryResolve_PresetAndInstrumentAttenuation_AccumulateAdditively() {
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndAttenuation(0, attenuationCentibels: 40);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.316f).Within(0.005f),
+                "preset(40 cB) + instrument(60 cB) = 100 cB must map to 10^(-100/200) ≈ 0.316, " +
+                "proving additive (not override) accumulation across the two zone levels.");
+        }
+
+        [Test]
+        [Description("A total InitialAttenuation beyond the SF2 max of 1440 cB clamps to silence (gain 0).")]
+        public void TryResolve_TotalAttenuationBeyondMax_ClampsToSilence() {
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndAttenuation(0, attenuationCentibels: 1000);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 1000));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0f),
+                "preset(1000 cB) + instrument(1000 cB) = 2000 cB exceeds the 1440 cB max and must clamp to silence.");
+        }
+
+        [Test]
+        [Description("A negative InitialAttenuation total (e.g. a malformed negative gen-48 amount) clamps up " +
+                     "to 0 cB, yielding full gain rather than amplification beyond unity.")]
+        public void TryResolve_NegativeAttenuationTotal_ClampsToFullGain() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, unchecked((ushort)(short)-50)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(1f),
+                "A negative attenuation total must clamp to 0 cB (gain 1.0), never amplify beyond unity.");
+        }
+
+        [Test]
+        [Description("Local instrument-zone InitialAttenuation(48) overrides the global instrument zone's " +
+                     "value (local-over-global precedence, same as every other generator).")]
+        public void TryResolve_LocalInstrumentAttenuationOverridesGlobal() {
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.InitialAttenuation, 200));
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { globalZone, localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.5f).Within(0.005f),
+                "local InitialAttenuation=60 cB must override the global instrument zone's 200 cB.");
         }
     }
 }
