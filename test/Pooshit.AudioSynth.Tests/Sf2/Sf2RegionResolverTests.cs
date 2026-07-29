@@ -918,21 +918,24 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
-        [Description("InitialAttenuation(48)=60 cB at the instrument level maps to a linear gain of ~0.5 " +
-                     "(10^(-60/200) ≈ 0.501).")]
-        public void TryResolve_InstrumentAttenuation60Centibels_MapsToHalfGain() {
+        [Description("InitialAttenuation(48)=60 cB at the instrument level maps to a linear gain of ~0.759 " +
+                     "under the EMU 0.4 scaling (10^(-0.4*60/200) = 10^(-60/500) ≈ 0.759; DiVoid #7273 — " +
+                     "NOT the spec-literal 10^(-60/200)=0.5, which over-attenuates against the EMU8k/10k " +
+                     "convention every soundfont, including OmegaGMGS2, is authored against).")]
+        public void TryResolve_InstrumentAttenuation60Centibels_MapsToEmuScaledGain() {
             Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
 
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.5f).Within(0.005f),
-                "60 cB of attenuation must map to 10^(-60/200) ≈ 0.5.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.759f).Within(0.005f),
+                "60 cB of attenuation must map to 10^(-0.4*60/200) ≈ 0.759 under the EMU scaling.");
         }
 
         [Test]
-        [Description("InitialAttenuation(48)=100 cB at the instrument level maps to a linear gain of ~0.316.")]
+        [Description("InitialAttenuation(48)=100 cB at the instrument level maps to a linear gain of ~0.631 " +
+                     "under the EMU 0.4 scaling (10^(-0.4*100/200) = 10^(-100/500) ≈ 0.631; DiVoid #7273).")]
         public void TryResolve_InstrumentAttenuation100Centibels_MapsToExpectedGain() {
             Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 100));
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
@@ -940,13 +943,15 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.316f).Within(0.005f),
-                "100 cB (10 dB) of attenuation must map to 10^(-100/200) ≈ 0.316.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.631f).Within(0.005f),
+                "100 cB (10 dB specified) of attenuation must map to 10^(-0.4*100/200) ≈ 0.631 under the EMU scaling.");
         }
 
         [Test]
         [Description("Preset-zone InitialAttenuation(48) and instrument-zone InitialAttenuation(48) accumulate " +
-                     "additively (SF2 §8.1.2), not by override: preset=40 cB + instrument=60 cB sums to 100 cB.")]
+                     "additively (SF2 §8.1.2), not by override: preset=40 cB + instrument=60 cB sums to 100 cB, " +
+                     "then the EMU 0.4 scale is applied to the total (summing-then-scaling is exact: " +
+                     "0.4*(40+60) = 0.4*40 + 0.4*60).")]
         public void TryResolve_PresetAndInstrumentAttenuation_AccumulateAdditively() {
             Sf2Zone[] presetZones = PresetZoneWithInstrumentAndAttenuation(0, attenuationCentibels: 40);
             Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
@@ -955,9 +960,9 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.316f).Within(0.005f),
-                "preset(40 cB) + instrument(60 cB) = 100 cB must map to 10^(-100/200) ≈ 0.316, " +
-                "proving additive (not override) accumulation across the two zone levels.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.631f).Within(0.005f),
+                "preset(40 cB) + instrument(60 cB) = 100 cB must map to 10^(-0.4*100/200) ≈ 0.631, " +
+                "proving additive (not override) accumulation across the two zone levels under the EMU scaling.");
         }
 
         [Test]
@@ -990,7 +995,8 @@ namespace Pooshit.AudioSynth.Tests {
 
         [Test]
         [Description("Local instrument-zone InitialAttenuation(48) overrides the global instrument zone's " +
-                     "value (local-over-global precedence, same as every other generator).")]
+                     "value (local-over-global precedence, same as every other generator); resulting 60 cB " +
+                     "maps through the EMU 0.4 scaling to ~0.759 (DiVoid #7273).")]
         public void TryResolve_LocalInstrumentAttenuationOverridesGlobal() {
             Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.InitialAttenuation, 200));
             Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
@@ -1001,8 +1007,9 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.5f).Within(0.005f),
-                "local InitialAttenuation=60 cB must override the global instrument zone's 200 cB.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.759f).Within(0.005f),
+                "local InitialAttenuation=60 cB must override the global instrument zone's 200 cB, and map " +
+                "through the EMU 0.4 scaling to 10^(-0.4*60/200) ≈ 0.759.");
         }
     }
 }

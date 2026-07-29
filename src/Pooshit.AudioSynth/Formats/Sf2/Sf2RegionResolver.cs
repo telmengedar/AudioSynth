@@ -18,6 +18,19 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const int DefaultEnvelopeTimecents = -12000;
         const float MaxEnvelopeSeconds = 20f;
         const int MaxSustainAttenuationCentibels = 1440;
+
+        /// <summary>
+        /// EMU8k/10k hardware convention: preset/instrument-level InitialAttenuation(48) attenuates
+        /// only ~0.4 dB of *actual* level for every 1 dB *specified* in the font (S. Christian Collins,
+        /// GeneralUser GS author, and Polyphone's documented "10 dB displayed -> 4 dB actual" behaviour;
+        /// FluidSynth applies the same scaling to gen-48). This is a deliberate, measured deviation from
+        /// the SF2 2.04 spec's literal <c>10^(-cB/200)</c> reading (§8.1.3) — soundfonts (including
+        /// OmegaGMGS2) are authored and tuned by ear against the EMU-scaled behaviour, not the literal
+        /// spec text, so applying the full unscaled centibel value over-attenuates melodic instruments
+        /// by 2.5x and crushes them to near-silence. DO NOT "correct" this back to 1.0/unscaled — that
+        /// regresses to the over-attenuation bug diagnosed in DiVoid #7273.
+        /// </summary>
+        const double EmuAttenuationScale = 0.4;
         const int DefaultFilterCutoffCents = 13500;
         const int MinFilterCutoffCents = 1500;
         const int MaxFilterResonanceCentibels = 960;
@@ -258,15 +271,34 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// Reads generator 48 (InitialAttenuation, centibels) at both the instrument-zone level and the
         /// preset-zone level and sums them — SF2 spec §8.1.2 defines InitialAttenuation as additive across
         /// the preset and instrument generator levels, unlike a plain override — then converts the total
-        /// to a linear gain via <see cref="CentibelsToLinear"/>, the same centibel-to-linear conversion and
-        /// [0, 1440] cB clamp already used for the volume envelope's sustain level. Absent gen-48 at both
-        /// levels sums to 0 cB, which maps to a gain of 1.0, so the region's amplitude is unchanged from
-        /// before this generator was read.
+        /// to a linear gain via <see cref="AttenuationCentibelsToLinear"/>. Absent gen-48 at both levels
+        /// sums to 0 cB, which maps to a gain of 1.0, so the region's amplitude is unchanged from before
+        /// this generator was read. Deliberately uses the EMU-scaled conversion, NOT the shared
+        /// <see cref="CentibelsToLinear"/> used by the volume-envelope sustain level (gen-37) — see
+        /// <see cref="EmuAttenuationScale"/> and DiVoid #7273 for why gen-48 and gen-37 must diverge here.
         /// </summary>
         static float BuildInitialAttenuationGain(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
             int instrumentCentibels = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0);
             int presetCentibels = GetEffectiveInt16(presetZone, presetGlobalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0);
-            return CentibelsToLinear(instrumentCentibels + presetCentibels);
+            return AttenuationCentibelsToLinear(instrumentCentibels + presetCentibels);
+        }
+
+        /// <summary>
+        /// Converts a centibel InitialAttenuation(48) amount to linear gain using the EMU8k/10k hardware
+        /// scaling (<see cref="EmuAttenuationScale"/>, ~0.4): <c>10^(-EmuAttenuationScale * cB / 200)</c>,
+        /// i.e. <c>10^(-cB/500)</c> at the current 0.4 scale — clamped to the same SF2 valid attenuation
+        /// range [0, <see cref="MaxSustainAttenuationCentibels"/>] cB as <see cref="CentibelsToLinear"/>
+        /// before scaling (clamp the raw sum, then scale — 0.4*(preset+instr) = 0.4*preset + 0.4*instr, so
+        /// summing-then-scaling is exact). Used ONLY for InitialAttenuation(48); the volume envelope's
+        /// sustain level (gen-37) must keep using the unscaled <see cref="CentibelsToLinear"/> — do not
+        /// reuse this for sustain (DiVoid #7273).
+        /// </summary>
+        static float AttenuationCentibelsToLinear(int centibels) {
+            if (centibels <= 0)
+                return 1f;
+            if (centibels >= MaxSustainAttenuationCentibels)
+                return 0f;
+            return (float)Math.Pow(10.0, -EmuAttenuationScale * centibels / 200.0);
         }
 
         /// <summary>
@@ -406,12 +438,13 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Converts a centibel attenuation amount to linear gain (<c>10^(-cB/200)</c>), clamped to the SF2
-        /// valid attenuation range [0, <see cref="MaxSustainAttenuationCentibels"/>] cB — a negative amount
-        /// is clamped up to 0 cB (full gain, 1.0) and an amount at or beyond the max is clamped down to
-        /// silence (0.0). Shared by the volume envelope's sustain level and <see cref="BuildInitialAttenuationGain"/>'s
-        /// region-level InitialAttenuation(48) gain, since both are SF2 centibel-attenuation quantities
-        /// under the same [0, 1440] cB bound.
+        /// Converts a centibel attenuation amount to linear gain using the literal SF2 2.04 §8.1.3
+        /// conversion (<c>10^(-cB/200)</c>), clamped to the SF2 valid attenuation range
+        /// [0, <see cref="MaxSustainAttenuationCentibels"/>] cB — a negative amount is clamped up to 0 cB
+        /// (full gain, 1.0) and an amount at or beyond the max is clamped down to silence (0.0). Used ONLY
+        /// for the volume envelope's sustain level (gen-37); InitialAttenuation(48) uses the EMU-scaled
+        /// <see cref="AttenuationCentibelsToLinear"/> instead — do NOT repoint gen-48 back at this method
+        /// (DiVoid #7273).
         /// </summary>
         static float CentibelsToLinear(int centibels) {
             if (centibels <= 0)
