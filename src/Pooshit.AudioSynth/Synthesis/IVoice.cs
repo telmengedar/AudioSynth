@@ -69,5 +69,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// already-inactive voice.
         /// </summary>
         void FastFadeForSteal();
+
+        /// <summary>
+        /// SF2 generator 57 (exclusiveClass) value carried from the voice's region, immutable for the
+        /// voice's lifetime; <c>0</c> means the voice belongs to no choke group. Read only by the engine,
+        /// which fast-fades every other sounding, same-channel voice sharing a non-zero class when this
+        /// voice starts (SF2 spec choke, e.g. GM hi-hats).
+        /// </summary>
+        int ExclusiveClass { get; }
     }
 }

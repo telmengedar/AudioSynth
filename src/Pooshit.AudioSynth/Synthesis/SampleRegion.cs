@@ -37,6 +37,12 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// the channel's <see cref="ISynthesizer.SetChannelChorusSend"/> weight alone still drives the
         /// voice (no impotence special-case, unlike <paramref name="reverbSend"/>'s inherited 1f).
         /// </param>
+        /// <param name="exclusiveClass">
+        /// SF2 generator 57 (exclusiveClass) value; defaults to <c>0</c>, meaning the region belongs to
+        /// no choke group. A non-zero value names a choke group: starting a voice for this region silences
+        /// every other sounding voice sharing the same class on the same channel (SF2 spec; e.g. GM
+        /// hi-hats), a click-free choke the engine implements by reusing <see cref="IVoice.FastFadeForSteal"/>.
+        /// </param>
         public SampleRegion(
             float[] buffer,
             int start,
@@ -52,7 +58,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             LfoParameters lfo,
             float pan,
             float reverbSend = 1f,
-            float chorusSend = 0f) {
+            float chorusSend = 0f,
+            int exclusiveClass = 0) {
             if (buffer is null)
                 throw new ArgumentNullException(nameof(buffer));
             if (start < 0 || start >= buffer.Length)
@@ -84,6 +91,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             Pan = pan;
             ReverbSend = reverbSend;
             ChorusSend = chorusSend;
+            ExclusiveClass = exclusiveClass;
         }
 
         /// <summary>
@@ -163,5 +171,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// additively with the channel's dynamic chorus-send weight at mix time.
         /// </summary>
         public float ChorusSend { get; }
+
+        /// <summary>
+        /// SF2 generator 57 (exclusiveClass) value; <c>0</c> means the region belongs to no choke group.
+        /// A non-zero value names a choke group matched, at note-onset, within the same MIDI channel.
+        /// </summary>
+        public int ExclusiveClass { get; }
     }
 }

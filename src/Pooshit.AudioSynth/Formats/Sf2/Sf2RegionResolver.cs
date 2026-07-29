@@ -206,6 +206,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             float pan = BuildPan(zone, globalZone);
             float reverbSend = BuildReverbSend(zone, globalZone);
             float chorusSend = BuildChorusSend(zone, globalZone);
+            int exclusiveClass = GetEffectiveRaw(zone, globalZone, Sf2GeneratorType.ExclusiveClass, defaultValue: 0);
 
             return new SampleRegion(
                 floatPool,
@@ -222,7 +223,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 lfo,
                 pan,
                 reverbSend,
-                chorusSend);
+                chorusSend,
+                exclusiveClass);
         }
 
         /// <summary>
