@@ -23,6 +23,9 @@ namespace Pooshit.AudioSynth.Sequencing {
         const int PercussionBank = 128;
         const int DefaultProgram = 0;
 
+        /// <summary>GM-reset default for a channel's latched bank-select MSB/LSB (CC0/CC32).</summary>
+        const int DefaultBankValue = 0;
+
         /// <summary>GM-reset default for CC7 (Channel Volume).</summary>
         const int DefaultChannelVolume = 100;
 
@@ -106,8 +109,12 @@ namespace Pooshit.AudioSynth.Sequencing {
             int[] cc11 = new int[ChannelCount];
             int[] selectedRpn = new int[ChannelCount];
             float[] bendRange = new float[ChannelCount];
+            int[] bankMsb = new int[ChannelCount];
+            int[] bankLsb = new int[ChannelCount];
             for (int channel = 0; channel < ChannelCount; channel++) {
-                synthesizer.SetChannelPatch(channel, ResolveProgramPatch(soundBank, channel, DefaultProgram));
+                bankMsb[channel] = DefaultBankValue;
+                bankLsb[channel] = DefaultBankValue;
+                synthesizer.SetChannelPatch(channel, ResolveProgramPatch(soundBank, channel, bankMsb[channel], bankLsb[channel], DefaultProgram));
                 cc7[channel] = DefaultChannelVolume;
                 cc11[channel] = DefaultExpression;
                 synthesizer.SetChannelGain(channel, ChannelGain(cc7[channel], cc11[channel]));
@@ -125,7 +132,7 @@ namespace Pooshit.AudioSynth.Sequencing {
                 long gap = scheduled.SampleOffset - cursor;
                 if (gap > 0)
                     cursor += OfflineRenderer.Render(synthesizer, sink, gap);
-                ApplyMessage(scheduled.Message, synthesizer, soundBank, cc7, cc11, selectedRpn, bendRange);
+                ApplyMessage(scheduled.Message, synthesizer, soundBank, cc7, cc11, selectedRpn, bendRange, bankMsb, bankLsb);
             }
 
             long tailFrames = (long)Math.Round(ReleaseTailSeconds * synthesizer.Format.SampleRate, MidpointRounding.AwayFromZero);
@@ -146,9 +153,12 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// Tier-1 GM housekeeping channel-mode controllers (design #7245): CC120 hard-silences the
         /// channel via <see cref="ISynthesizer.SilenceChannel"/>, CC123 releases every held note via
         /// <see cref="ISynthesizer.ReleaseAllNotes"/>, and CC121 resets a defined controller subset via
-        /// <see cref="ResetAllControllers"/>.
+        /// <see cref="ResetAllControllers"/>. CC0 (Bank Select MSB) and CC32 (Bank Select LSB) are pure
+        /// state writes into <paramref name="bankMsb"/>/<paramref name="bankLsb"/> — they never call the
+        /// synthesizer directly; the next <c>ProgramChange</c> latches the resolved bank (design #7251,
+        /// running-status behavior).
         /// </summary>
-        static void ApplyMessage(IMidiMessage message, ISynthesizer synthesizer, SoundBank soundBank, int[] cc7, int[] cc11, int[] selectedRpn, float[] bendRange) {
+        static void ApplyMessage(IMidiMessage message, ISynthesizer synthesizer, SoundBank soundBank, int[] cc7, int[] cc11, int[] selectedRpn, float[] bendRange, int[] bankMsb, int[] bankLsb) {
             if (!(message is ChannelMessage channel))
                 return;
 
@@ -160,9 +170,18 @@ namespace Pooshit.AudioSynth.Sequencing {
                     synthesizer.NoteOff(channel.MidiChannel, channel.Data1);
                     break;
                 case ChannelCommandType.ProgramChange:
-                    synthesizer.SetChannelPatch(channel.MidiChannel, ResolveProgramPatch(soundBank, channel.MidiChannel, channel.Data1));
+                    synthesizer.SetChannelPatch(channel.MidiChannel,
+                        ResolveProgramPatch(soundBank, channel.MidiChannel, bankMsb[channel.MidiChannel], bankLsb[channel.MidiChannel], channel.Data1));
                     break;
                 case ChannelCommandType.Controller:
+                    if (channel.Data1 == (byte)ControllerType.BankSelect) {
+                        bankMsb[channel.MidiChannel] = channel.Data2;
+                        break;
+                    }
+                    if (channel.Data1 == (byte)ControllerType.BankSelectFine) {
+                        bankLsb[channel.MidiChannel] = channel.Data2;
+                        break;
+                    }
                     if (channel.Data1 == (byte)ControllerType.Pan) {
                         synthesizer.SetChannelPan(channel.MidiChannel, ControllerToPan(channel.Data2));
                         break;
@@ -233,7 +252,9 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// full GM-reset loop in <see cref="Render"/>: pan, program/bank, reverb send (CC91), chorus send
         /// (CC93), <paramref name="cc7"/> (volume) itself, and the stored <c>bendRange</c> value are all
         /// untouched (design #7245 §4/§11) — do not refactor this to call the startup reset loop, which
-        /// resets strictly more than GM RAC specifies.
+        /// resets strictly more than GM RAC specifies. This deliberately includes the latched bank-select
+        /// state (<c>bankMsb</c>/<c>bankLsb</c>): GM1 Reset All Controllers scopes program/bank selection
+        /// out of RAC (design #7251 §RAC/reset semantics), so CC121 must never touch it.
         /// </summary>
         static void ResetAllControllers(int channel, ISynthesizer synthesizer, int[] cc7, int[] cc11, int[] selectedRpn) {
             synthesizer.SetChannelModulation(channel, 0f);
@@ -248,9 +269,23 @@ namespace Pooshit.AudioSynth.Sequencing {
             selectedRpn[channel] = RpnNull;
         }
 
-        static IPatch ResolveProgramPatch(SoundBank soundBank, int channel, int program) {
-            int bank = channel == PercussionChannel ? PercussionBank : MelodicBank;
-            return soundBank.GetPatch(bank, program);
+        static IPatch ResolveProgramPatch(SoundBank soundBank, int channel, int msb, int lsb, int program) {
+            return soundBank.GetPatch(ResolveBank(channel, msb, lsb), program);
+        }
+
+        /// <summary>
+        /// Maps a channel's latched bank-select state to an SF2 <c>wBank</c> (design #7251 §8.1):
+        /// the percussion channel (index 9) always resolves to <see cref="PercussionBank"/> regardless
+        /// of bank-select (alternate kits are selected by program number, not bank); every other
+        /// channel resolves to the Bank Select MSB (<paramref name="msb"/>) verbatim — SF2's <c>wBank</c>
+        /// is a single integer with no room for <c>MSB×128 + LSB</c>, so GS/XG soundfonts collapse
+        /// variation banks onto the MSB and <paramref name="lsb"/> does not participate in SF2 bank
+        /// selection (captured only so a future NRPN/XG-LSB feature needs no data-model change). This is
+        /// OQ-1 Option A (Toni, 2026-07-29): plain MSB passthrough, no MSB 126/127→drums special-case on
+        /// melodic channels.
+        /// </summary>
+        static int ResolveBank(int channel, int msb, int lsb) {
+            return channel == PercussionChannel ? PercussionBank : msb;
         }
 
         /// <summary>

@@ -7,8 +7,9 @@ using Pooshit.AudioSynth.Tests.Helpers;
 namespace Pooshit.AudioSynth.Tests {
 
     /// <summary>
-    /// <see cref="SoundBank.GetPatch"/> fallback-chain tests (DiVoid #7117 §8): exact match, same-bank
-    /// lowest-present program, melodic default, percussion default, and the absolute fallback.
+    /// <see cref="SoundBank.GetPatch"/> fallback-chain tests (DiVoid #7117 §8, extended by MIDI Bank
+    /// Select design #7251 §8.2): exact match, bank-0 same program (the bank-select regression guard),
+    /// same-bank lowest-present program, melodic default, percussion default, and the absolute fallback.
     /// </summary>
     [TestFixture]
     public class SoundBankTests {
@@ -41,15 +42,87 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
-        [Description("A melodic bank absent entirely falls back to bank 0 / program 0 (GM piano).")]
-        public void GetPatch_MelodicBankAbsent_FallsBackToBankZeroProgramZero() {
+        [Description("A variation bank absent entirely, with the requested program also absent from bank 0, " +
+                     "falls back to bank 0 / program 0 (GM piano). Renamed per OQ-2 (design #7251 §13): now " +
+                     "that rung 2 (bank-0 same program) exists, this test's name must reflect that it exercises " +
+                     "the case where rung 2 ALSO misses, not merely 'bank absent'.")]
+        public void GetPatch_BankAbsentAndGmProgramAbsent_FallsBackToBankZeroProgramZero() {
             StubPatch piano = new StubPatch("piano");
             SoundBank bank = new SoundBank(new[] {
                 (0, 0, (IPatch)piano),
             });
 
             Assert.That(bank.GetPatch(5, 12), Is.SameAs(piano),
-                "Bank 5 does not exist; the melodic default (bank 0/program 0) must be used.");
+                "Bank 5 does not exist and bank 0/program 12 does not exist either; the melodic default " +
+                "(bank 0/program 0) must be used.");
+        }
+
+        [Test]
+        [Description("Rung 2 (regression guard, design #7251 §8.2): a variation bank absent entirely, but " +
+                     "the requested program present in bank 0, returns the bank-0 patch for that program " +
+                     "rather than degrading all the way to the melodic default (0,0).")]
+        public void GetPatch_VariationBankAbsentButGmProgramPresent_ReturnsBankZeroSameProgram() {
+            StubPatch piano = new StubPatch("piano");
+            StubPatch viola = new StubPatch("viola");
+            SoundBank bank = new SoundBank(new[] {
+                (0, 0, (IPatch)piano),
+                (0, 40, (IPatch)viola),
+            });
+
+            Assert.That(bank.GetPatch(8, 40), Is.SameAs(viola),
+                "Bank 8 does not exist; rung 2 must return the same program (40) from bank 0 (viola), " +
+                "not the melodic default (piano) — this is the GM-only-font regression guard.");
+        }
+
+        [Test]
+        [Description("Rung 2 beats rung 3 (design #7251 §8.2): when the variation bank IS present but lacks " +
+                     "the requested program, and bank 0 has that program, rung 2 (bank-0 same program) must " +
+                     "win over rung 3 (same-bank lowest present program) — the same instrument beats an " +
+                     "unrelated substitute from the requested bank.")]
+        public void GetPatch_VariationBankPresentButProgramAbsent_Rung2BeatsSameBankLowest() {
+            StubPatch bankEightLow = new StubPatch("bank8-lowest");
+            StubPatch viola = new StubPatch("viola");
+            SoundBank bank = new SoundBank(new[] {
+                (8, 3, (IPatch)bankEightLow),
+                (0, 40, (IPatch)viola),
+            });
+
+            Assert.That(bank.GetPatch(8, 40), Is.SameAs(viola),
+                "Bank 8 exists but lacks program 40; rung 2 (bank 0, program 40 = viola) must be preferred " +
+                "over rung 3 (bank 8's lowest present program).");
+        }
+
+        [Test]
+        [Description("Rung 2 is guarded off for bank 0 requests: a missing program in bank 0 itself must " +
+                     "still fall to the same-bank lowest present program (rung 3), not loop back into rung 2.")]
+        public void GetPatch_BankZeroRequestMissingProgram_Rung2GuardedOff_UsesSameBankLowest() {
+            StubPatch low = new StubPatch("low");
+            StubPatch high = new StubPatch("high");
+            SoundBank bank = new SoundBank(new[] {
+                (0, 10, (IPatch)high),
+                (0, 3, (IPatch)low),
+            });
+
+            Assert.That(bank.GetPatch(0, 99), Is.SameAs(low),
+                "Bank-0 requests must be unaffected by rung 2 (it is redundant with rung 1 there); " +
+                "the existing same-bank-lowest fallback (rung 3) must still apply.");
+        }
+
+        [Test]
+        [Description("Rung 2 is guarded off for percussion (bank 128) requests: a missing program in bank " +
+                     "128, even when bank 0 holds that same program number, must never degrade to a melodic " +
+                     "instrument — it must resolve within bank 128 or the deeper percussion/absolute fallback.")]
+        public void GetPatch_PercussionRequestMissingProgram_Rung2GuardedOff_NeverReturnsMelodicPatch() {
+            StubPatch piano = new StubPatch("piano");
+            StubPatch kit = new StubPatch("kit");
+            SoundBank bank = new SoundBank(new[] {
+                (0, 57, (IPatch)piano),
+                (128, 0, (IPatch)kit),
+            });
+
+            Assert.That(bank.GetPatch(128, 57), Is.SameAs(kit),
+                "Bank 128 lacks program 57, but bank 0/program 57 (piano) exists; rung 2 must be guarded " +
+                "off for percussion requests, so the result must stay within bank 128 (the kit), never piano.");
         }
 
         [Test]
