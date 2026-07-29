@@ -35,6 +35,9 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         public float ChorusSend => 0f;
 
         /// <inheritdoc/>
+        public int ExclusiveClass => 0;
+
+        /// <inheritdoc/>
         public float CurrentGain => 0f;
 
         /// <inheritdoc/>

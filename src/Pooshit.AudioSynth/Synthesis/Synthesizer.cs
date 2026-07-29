@@ -33,9 +33,14 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// the best-candidate slot instead (released voices first, then the quietest sounding voice, then the
     /// oldest), fast-fading that voice to silence while it keeps rendering through this same unchanged mix
     /// loop, and only starting the new note in-place once the fade reaches silence — a song that never
-    /// exceeds the pool never takes this path and renders bit-for-bit as before. All buffers, including
-    /// both effects' delay lines and send buses, are ctor-sized; steady-state <see cref="Read"/> allocates
-    /// nothing.
+    /// exceeds the pool never takes this path and renders bit-for-bit as before. Also implements SF2
+    /// exclusive-class choking (generator 57, DiVoid #7226/#7227): starting a voice whose region carries a
+    /// non-zero <see cref="IVoice.ExclusiveClass"/> fast-fades every other sounding, non-draining voice on
+    /// the same channel sharing that class (e.g. GM hi-hats), reusing the same click-free
+    /// <see cref="IVoice.FastFadeForSteal"/> voice-stealing already ships; a voice with class 0 — every
+    /// non-SF2 voice and every SF2 region without gen 57 — takes today's path unchanged, bit-for-bit. All
+    /// buffers, including both effects' delay lines and send buses, are ctor-sized; steady-state
+    /// <see cref="Read"/> allocates nothing.
     /// </summary>
     public sealed class Synthesizer : ISynthesizer {
 
@@ -254,7 +259,10 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// Starts a new voice for <paramref name="channel"/>/<paramref name="key"/>/<paramref name="velocity"/>
         /// in <paramref name="slotIndex"/>, applying the channel's live pitch-bend and mod-wheel exactly as
         /// a fresh <see cref="NoteOn"/> does, and stamping a fresh age. Shared by the free-slot path and the
-        /// deferred pending-note start (<see cref="Read"/>) so both allocate a voice identically.
+        /// deferred pending-note start (<see cref="Read"/>) so both allocate a voice identically, and so
+        /// both onsets get the exclusive-class choke (DiVoid #7226/#7227): a non-zero
+        /// <see cref="IVoice.ExclusiveClass"/> fast-fades every other occupied, non-draining, same-channel
+        /// voice sharing that class.
         /// </summary>
         void StartVoiceInSlot(int slotIndex, int channel, int key, int velocity) {
             IVoice voice = channelPatch[channel].StartVoice(key, velocity);
@@ -269,6 +277,33 @@ namespace Pooshit.AudioSynth.Synthesis {
             slot.Released = false;
             slot.Age = nextAge++;
             slot.PendingChannel = NoPendingNote;
+
+            ChokeSameClassVoices(slotIndex, channel, voice.ExclusiveClass);
+        }
+
+        /// <summary>
+        /// SF2 exclusive-class choke (gen 57, DiVoid #7226/#7227): when <paramref name="exclusiveClass"/>
+        /// is non-zero, fast-fades every other occupied, non-draining slot on <paramref name="channel"/>
+        /// whose voice reports the same class — the click-free cut voice-stealing already ships (INV-1).
+        /// <c>exclusiveClass == 0</c> returns immediately, so non-choke content takes today's path
+        /// unchanged, bit-for-bit. Single linear pool scan, no allocation (INV-2).
+        /// </summary>
+        void ChokeSameClassVoices(int slotIndex, int channel, int exclusiveClass) {
+            if (exclusiveClass == 0)
+                return;
+
+            for (int i = 0; i < pool.Length; i++) {
+                if (i == slotIndex)
+                    continue;
+
+                ref VoiceSlot other = ref pool[i];
+                if (!other.IsOccupied || other.PendingChannel != NoPendingNote)
+                    continue;
+                if (other.Channel != channel || other.Voice!.ExclusiveClass != exclusiveClass)
+                    continue;
+
+                other.Voice.FastFadeForSteal();
+            }
         }
 
         /// <summary>

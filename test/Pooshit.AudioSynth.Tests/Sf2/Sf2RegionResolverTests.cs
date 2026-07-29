@@ -853,5 +853,49 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(region!.ChorusSend, Is.EqualTo(0.25f).Within(1e-6f),
                 "local ChorusEffectsSend=250 must override global ChorusEffectsSend=1000.");
         }
+
+        [Test]
+        [Description("Absent ExclusiveClass(57) generator defaults to 0 (no choke group), DiVoid #7226/#7227.")]
+        public void TryResolve_NoExclusiveClassGenerator_DefaultsToZero() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ExclusiveClass, Is.EqualTo(0),
+                "Absent ExclusiveClass(57) generator must default to 0.");
+        }
+
+        [Test]
+        [Description("ExclusiveClass(57)=1 (the GM hi-hat/percussion choke group) reads through as the " +
+                     "unsigned raw amount, unclamped (DiVoid #7226/#7227).")]
+        public void TryResolve_ExclusiveClassOne_ReadsThroughUnclamped() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ExclusiveClass, 1));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ExclusiveClass, Is.EqualTo(1),
+                "ExclusiveClass=1 must read through directly as the choke-group id.");
+        }
+
+        [Test]
+        [Description("Local zone ExclusiveClass(57) generator overrides the global instrument zone's value.")]
+        public void TryResolve_LocalExclusiveClassOverridesGlobal() {
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.ExclusiveClass, 3));
+            Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ExclusiveClass, 5));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { globalZone, localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ExclusiveClass, Is.EqualTo(5),
+                "local ExclusiveClass=5 must override global ExclusiveClass=3.");
+        }
     }
 }
