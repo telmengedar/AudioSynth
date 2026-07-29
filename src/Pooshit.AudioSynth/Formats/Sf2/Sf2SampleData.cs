@@ -36,6 +36,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         float[]? floatPool;
+        float? loudnessEstimate;
 
         /// <summary>
         /// The smpl chunk data: one signed int16 per sample frame.  For 16-bit pools this is the
@@ -75,6 +76,77 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 }
                 return floatPool;
             }
+        }
+
+        /// <summary>
+        /// Block size, in frames, used by <see cref="LoudnessEstimate"/>'s block-RMS analysis
+        /// (DiVoid #7257): large enough to average out sample-to-sample noise, small enough that a
+        /// long silent intro/tail doesn't dominate a single block's RMS.
+        /// </summary>
+        const int LoudnessBlockSize = 2048;
+
+        /// <summary>
+        /// Silence gate for <see cref="LoudnessEstimate"/> (DiVoid #7257): a block whose RMS is below
+        /// this magnitude (~-50 dBFS) is excluded from the aggregate so silent intros/tails/decays
+        /// don't deflate the estimate.
+        /// </summary>
+        const float LoudnessSilenceThreshold = 0.00316f;
+
+        /// <summary>
+        /// Lazily-built, cached, silence-gated, outlier-robust loudness estimate of this pool's
+        /// <see cref="FloatPool"/> (DiVoid #7254/#7257): the pool is split into fixed-size blocks of
+        /// <see cref="LoudnessBlockSize"/> frames, each block's RMS is computed, blocks whose RMS falls
+        /// below <see cref="LoudnessSilenceThreshold"/> are gated out (so silent tails/intros can't
+        /// deflate the result), and the aggregate is the <em>median</em> of the surviving blocks' RMS
+        /// values — not a plain global RMS — so a single hot one-shot block can't dominate it. If every
+        /// block is gated out (an all-silence or near-silence pool) this is <c>0f</c>, never NaN/Inf and
+        /// never a spuriously low-but-nonzero value that could imply a huge calibration gain: a caller
+        /// deriving <c>gain = min(1, reference/estimate)</c> must treat 0f as "unmeasured" and clamp to
+        /// 1.0, never boost. Pure and deterministic: the same pool always yields the same value, and the
+        /// value is cached after first access exactly like <see cref="FloatPool"/>.
+        /// </summary>
+        public float LoudnessEstimate {
+            get {
+                if (loudnessEstimate is null)
+                    loudnessEstimate = ComputeLoudnessEstimate(FloatPool);
+                return loudnessEstimate.Value;
+            }
+        }
+
+        static float ComputeLoudnessEstimate(float[] pool) {
+            if (pool.Length == 0)
+                return 0f;
+
+            int blockCount = (pool.Length + LoudnessBlockSize - 1) / LoudnessBlockSize;
+            float[] blockRms = new float[blockCount];
+            int survivingCount = 0;
+
+            for (int b = 0; b < blockCount; b++) {
+                int start = b * LoudnessBlockSize;
+                int length = Math.Min(LoudnessBlockSize, pool.Length - start);
+
+                double sumSquares = 0.0;
+                for (int i = 0; i < length; i++) {
+                    float s = pool[start + i];
+                    sumSquares += (double)s * s;
+                }
+                float rms = (float)Math.Sqrt(sumSquares / length);
+
+                if (rms >= LoudnessSilenceThreshold)
+                    blockRms[survivingCount++] = rms;
+            }
+
+            if (survivingCount == 0)
+                return 0f;
+
+            float[] surviving = new float[survivingCount];
+            Array.Copy(blockRms, surviving, survivingCount);
+            Array.Sort(surviving);
+
+            int mid = survivingCount / 2;
+            return (survivingCount % 2 == 0)
+                ? (surviving[mid - 1] + surviving[mid]) / 2f
+                : surviving[mid];
         }
 
         /// <summary>

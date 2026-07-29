@@ -18,8 +18,14 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         /// <summary>
         /// Builds a <see cref="SoundBank"/> from an ordered collection of (bank, program, patch) entries.
+        /// <paramref name="loudnessEstimate"/> is the bank's measured inherent loudness (DiVoid #7254/#7257),
+        /// a plain <c>float</c> so this format-neutral <c>Synthesis</c> type stays free of any dependency on
+        /// a concrete format loader (e.g. <c>Formats.Sf2</c>); the sentinel <c>0f</c> means "unmeasured /
+        /// no-op" — every bank built via callers that don't pass this argument (including every existing
+        /// caller and test) defaults to it, and a wiring-layer gain-derivation helper must resolve that
+        /// sentinel to a neutral (non-boosting) gain.
         /// </summary>
-        public SoundBank(IEnumerable<(int Bank, int Program, IPatch Patch)> entries) {
+        public SoundBank(IEnumerable<(int Bank, int Program, IPatch Patch)> entries, float loudnessEstimate = 0f) {
             if (entries is null) throw new ArgumentNullException(nameof(entries));
 
             List<IPatch> all = new List<IPatch>();
@@ -36,7 +42,15 @@ namespace Pooshit.AudioSynth.Synthesis {
                 programs[program] = patch;
             }
             patches = all.ToArray();
+            LoudnessEstimate = loudnessEstimate;
         }
+
+        /// <summary>
+        /// This bank's measured inherent loudness (DiVoid #7254/#7257), or the <c>0f</c> sentinel for
+        /// "unmeasured / no-op" when built via a caller that doesn't supply one. Format-neutral: a plain
+        /// scalar handed in by the loader, not derived here.
+        /// </summary>
+        public float LoudnessEstimate { get; }
 
         /// <summary>
         /// Every patch loaded into this bank, in load order.

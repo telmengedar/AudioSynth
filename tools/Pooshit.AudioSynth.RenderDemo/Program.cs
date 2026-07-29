@@ -6,6 +6,7 @@ using Pooshit.AudioSynth.Audio.Sinks;
 using Pooshit.AudioSynth.Formats;
 using Pooshit.AudioSynth.Formats.Sf2;
 using Pooshit.AudioSynth.RenderDemo;
+using Pooshit.AudioSynth.Sequencing;
 using Pooshit.AudioSynth.Synthesis;
 
 string? soundfontPath = args.Length > 0 ? args[0] : FindDefaultSoundfont();
@@ -44,6 +45,7 @@ if (lfoOverrideRequested && patch is Sf2Patch sf2Patch)
         sf2Patch, format.SampleRate, lfoRateHz, vibratoDepthCents, tremoloDepthCentibels, filterSweepDepthCents);
 
 Synthesizer synthesizer = new Synthesizer(new SynthesizerOptions(format.SampleRate, format.Channels), patch);
+synthesizer.SetMasterCalibrationGain(MidiSequencer.DeriveCalibrationGain(bank));
 
 long frames = (long)(durationSeconds * format.SampleRate);
 long holdFrames = frames / 2;

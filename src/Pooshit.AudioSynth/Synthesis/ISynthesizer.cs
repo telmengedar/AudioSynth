@@ -94,5 +94,14 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// occupied voices; other channels are untouched. MIDI-neutral: mirrors <see cref="NoteOff"/>.
         /// </summary>
         void ReleaseAllNotes(int channel);
+
+        /// <summary>
+        /// Sets the master-bus calibration gain applied once at the head of <c>ApplyMasterBus</c>, before the
+        /// soft-clip — a static per-render scalar (no zipper/ramp needed since it is set once before frame 0 and
+        /// held constant for the whole render). Typically derived by the wiring layer from a soundfont's measured
+        /// inherent loudness relative to a reference font, attenuate-only (gain ∈ (0,1]) so quiet fonts are never
+        /// boosted. Default 1.0 (no-op) until called. MIDI-neutral: the engine does not interpret this value.
+        /// </summary>
+        void SetMasterCalibrationGain(float gain);
     }
 }

@@ -63,6 +63,17 @@ namespace Pooshit.AudioSynth.Sequencing {
         const int RpnNull = 16383;
 
         /// <summary>
+        /// The reference anchor for adaptive master gain-staging (DiVoid #7254/#7257): the Florestan GM
+        /// SoundFont's own <see cref="SoundBank.LoudnessEstimate"/>, baked as the exact bit pattern
+        /// produced by <c>value.ToString("G9", CultureInfo.InvariantCulture)</c> against a real load of
+        /// <c>__Florestan_Basic_GM_GS.sf2</c> — re-parsing this literal reproduces the identical float,
+        /// so <see cref="DeriveCalibrationGain"/> resolves Florestan's own gain to exactly <c>1.0f</c>
+        /// (locked decision: Florestan stays byte-identical). Do not "clean up" this literal's digit
+        /// count — the exact digits are load-bearing for the round-trip identity.
+        /// </summary>
+        const float ReferenceLoudness = 0.303088784f;
+
+        /// <summary>
         /// Builds the ordered sample-offset schedule for <paramref name="sequence"/>; pure, no audio
         /// touched. Folds a <c>NoteOn</c> with velocity 0 into its <c>NoteOff</c> equivalent.
         /// </summary>
@@ -102,6 +113,8 @@ namespace Pooshit.AudioSynth.Sequencing {
             if (soundBank is null)
                 throw new ArgumentNullException(nameof(soundBank));
 
+            synthesizer.SetMasterCalibrationGain(DeriveCalibrationGain(soundBank));
+
             int[] cc7 = new int[ChannelCount];
             int[] cc11 = new int[ChannelCount];
             int[] selectedRpn = new int[ChannelCount];
@@ -131,6 +144,21 @@ namespace Pooshit.AudioSynth.Sequencing {
             long tailFrames = (long)Math.Round(ReleaseTailSeconds * synthesizer.Format.SampleRate, MidpointRounding.AwayFromZero);
             cursor += OfflineRenderer.Render(synthesizer, sink, tailFrames);
             return cursor;
+        }
+
+        /// <summary>
+        /// Derives the attenuate-only master calibration gain for <paramref name="soundBank"/>: <c>min(1, ReferenceLoudness / estimate)</c>
+        /// against the Florestan-anchored <see cref="ReferenceLoudness"/>; a bank with no measured estimate (sentinel 0f — e.g. hand-built
+        /// banks not loaded via the SF2 path) or one quieter than the reference resolves to the neutral 1.0f — never boosted.
+        /// </summary>
+        public static float DeriveCalibrationGain(SoundBank soundBank) {
+            if (soundBank is null)
+                throw new ArgumentNullException(nameof(soundBank));
+
+            float estimate = soundBank.LoudnessEstimate;
+            if (estimate <= 0f)
+                return 1f;
+            return Math.Min(1f, ReferenceLoudness / estimate);
         }
 
         static IMidiMessage FoldNoteOnVelocityZero(IMidiMessage message) {

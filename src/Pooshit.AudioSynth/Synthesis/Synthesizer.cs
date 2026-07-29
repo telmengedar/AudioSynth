@@ -42,6 +42,16 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// buffers, including both effects' delay lines and send buses, are ctor-sized; steady-state
     /// <see cref="Read"/> allocates nothing.
     /// </summary>
+    /// <remarks>
+    /// Update (PR, task #7257, adaptive master gain-staging): holds a single <see cref="masterCalibrationGain"/>
+    /// scalar (default 1.0, no-op) settable once via <see cref="SetMasterCalibrationGain"/>, typically pushed by
+    /// the wiring layer before frame 0 from a soundfont's measured inherent loudness relative to a reference font
+    /// (DiVoid #7254). <see cref="ApplyMasterBus"/> is now an instance method so it can read the field, and
+    /// multiplies every finite sample by it as the very first step — including samples that stay below the
+    /// soft-clip knee, which previously passed through the loop untouched. A gain of exactly 1.0f is a true
+    /// IEEE-754 identity multiply, so a render that never calls this seam (or calls it with 1.0f) is bit-for-bit
+    /// unchanged from before this update.
+    /// </remarks>
     public sealed class Synthesizer : ISynthesizer {
 
         const int ChannelCount = 16;
@@ -88,6 +98,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         readonly bool perChannelReverb;
         readonly bool perChannelChorus;
         int nextAge;
+        float masterCalibrationGain = 1f;
 
         /// <summary>
         /// Creates a <see cref="Synthesizer"/> with the given options; <paramref name="defaultPatch"/> fills
@@ -262,6 +273,11 @@ namespace Pooshit.AudioSynth.Synthesis {
                 slot.Voice!.FastFadeForSteal();
                 slot.PendingChannel = NoPendingNote;
             }
+        }
+
+        /// <inheritdoc/>
+        public void SetMasterCalibrationGain(float gain) {
+            masterCalibrationGain = gain;
         }
 
         /// <inheritdoc/>
@@ -556,18 +572,25 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         /// <summary>
-        /// Stateless per-sample soft-clip on the master bus, before <see cref="Finalize"/> (INV-2): unity
-        /// below the knee, <c>tanh</c>-saturating toward ±1 above it; NaN/Inf samples pass through untouched.
+        /// Per-sample master-bus stage, before <see cref="Finalize"/> (INV-2): first applies
+        /// <see cref="masterCalibrationGain"/> (a true IEEE-754 identity when 1.0f — the default and the
+        /// Florestan-anchored case, DiVoid #7254/#7257), then soft-clips — unity below the knee,
+        /// <c>tanh</c>-saturating toward ±1 above it; NaN/Inf samples are skipped by both steps and pass
+        /// through untouched (INV-2 remains the sole choke on them, via <see cref="Finalize"/>).
         /// </summary>
-        static void ApplyMasterBus(Span<float> block) {
+        void ApplyMasterBus(Span<float> block) {
             for (int i = 0; i < block.Length; i++) {
                 float x = block[i];
                 if (float.IsNaN(x) || float.IsInfinity(x))
                     continue;
 
+                x *= masterCalibrationGain;
+
                 float magnitude = Math.Abs(x);
-                if (magnitude <= MasterBusKneeThreshold)
+                if (magnitude <= MasterBusKneeThreshold) {
+                    block[i] = x;
                     continue;
+                }
 
                 float sign = x < 0f ? -1f : 1f;
                 float excess = (magnitude - MasterBusKneeThreshold) / (1f - MasterBusKneeThreshold);

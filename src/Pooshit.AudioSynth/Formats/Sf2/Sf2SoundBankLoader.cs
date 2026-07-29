@@ -485,7 +485,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 Sf2Patch patch = new Sf2Patch(preset, instruments, sampleHeaders, sampleData, rate);
                 entries.Add((preset.BankNumber, preset.PatchNumber, patch));
             }
-            return new SoundBank(entries);
+            return new SoundBank(entries, sampleData.LoudnessEstimate);
         }
 
         private static int ValidateChunkCount(int size, int recordSize, int minCount, string chunkName) {
