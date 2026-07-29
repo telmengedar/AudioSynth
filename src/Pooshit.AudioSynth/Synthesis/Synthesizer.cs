@@ -244,14 +244,50 @@ namespace Pooshit.AudioSynth.Synthesis {
             bool sustained = channelSustain[channel];
             for (int i = 0; i < pool.Length; i++) {
                 ref VoiceSlot slot = ref pool[i];
-                if (slot.IsOccupied && slot.Channel == channel && slot.Key == key) {
-                    if (sustained) {
-                        slot.PendingRelease = true;
-                    } else {
-                        slot.Voice!.Release();
-                        slot.Released = true;
-                    }
-                }
+                if (slot.IsOccupied && slot.Channel == channel && slot.Key == key)
+                    ReleaseSlot(ref slot, sustained);
+            }
+        }
+
+        /// <inheritdoc/>
+        public void SilenceChannel(int channel) {
+            if (channel < 0 || channel >= ChannelCount)
+                throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
+
+            for (int i = 0; i < pool.Length; i++) {
+                ref VoiceSlot slot = ref pool[i];
+                if (!slot.IsOccupied || slot.Channel != channel)
+                    continue;
+
+                slot.Voice!.FastFadeForSteal();
+                slot.PendingChannel = NoPendingNote;
+            }
+        }
+
+        /// <inheritdoc/>
+        public void ReleaseAllNotes(int channel) {
+            if (channel < 0 || channel >= ChannelCount)
+                throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
+
+            bool sustained = channelSustain[channel];
+            for (int i = 0; i < pool.Length; i++) {
+                ref VoiceSlot slot = ref pool[i];
+                if (slot.IsOccupied && slot.Channel == channel)
+                    ReleaseSlot(ref slot, sustained);
+            }
+        }
+
+        /// <summary>
+        /// Shared sustain-aware release branch for <see cref="NoteOff"/> and <see cref="ReleaseAllNotes"/>:
+        /// while <paramref name="sustained"/> the slot's release is deferred (<see cref="VoiceSlot.PendingRelease"/>),
+        /// otherwise the voice releases into its normal envelope tail immediately.
+        /// </summary>
+        static void ReleaseSlot(ref VoiceSlot slot, bool sustained) {
+            if (sustained) {
+                slot.PendingRelease = true;
+            } else {
+                slot.Voice!.Release();
+                slot.Released = true;
             }
         }
 

@@ -75,5 +75,24 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// unaffected by disengaging the pedal. MIDI-neutral: mirrors <see cref="SetChannelPan"/>.
         /// </summary>
         void SetChannelSustain(int channel, bool held);
+
+        /// <summary>
+        /// Fast-fades every currently-sounding voice on the channel to silence over the standard
+        /// click-free declick window (typically driven by MIDI CC120, All Sound Off), regardless of
+        /// the channel's sustain-pedal state; no envelope release runs. Any note deferred behind a
+        /// slot's own steal fade on the channel is cancelled so it cannot spring to life once the
+        /// fade completes. A no-op on a channel with no occupied voices; other channels are untouched.
+        /// MIDI-neutral: reuses the same declick path as voice-stealing.
+        /// </summary>
+        void SilenceChannel(int channel);
+
+        /// <summary>
+        /// Releases every currently-sounding voice on the channel exactly as if a <see cref="NoteOff"/>
+        /// had arrived for its key (typically driven by MIDI CC123, All Notes Off): deferred to the
+        /// channel's pending-release state while its sustain pedal is held, else released into its
+        /// normal envelope tail. Idempotent on already-released voices. A no-op on a channel with no
+        /// occupied voices; other channels are untouched. MIDI-neutral: mirrors <see cref="NoteOff"/>.
+        /// </summary>
+        void ReleaseAllNotes(int channel);
     }
 }

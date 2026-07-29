@@ -142,7 +142,11 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// <summary>
         /// Applies one scheduled MIDI message. CC101/CC100 arm a channel's 14-bit RPN selector;
         /// while that selector is 0 (RPN 0, Pitch Bend Sensitivity), CC6 sets <paramref name="bendRange"/>
-        /// for the channel, otherwise CC6 is ignored (DiVoid #7210).
+        /// for the channel, otherwise CC6 is ignored (DiVoid #7210). CC120/CC121/CC123 route to the
+        /// Tier-1 GM housekeeping channel-mode controllers (design #7245): CC120 hard-silences the
+        /// channel via <see cref="ISynthesizer.SilenceChannel"/>, CC123 releases every held note via
+        /// <see cref="ISynthesizer.ReleaseAllNotes"/>, and CC121 resets a defined controller subset via
+        /// <see cref="ResetAllControllers"/>.
         /// </summary>
         static void ApplyMessage(IMidiMessage message, ISynthesizer synthesizer, SoundBank soundBank, int[] cc7, int[] cc11, int[] selectedRpn, float[] bendRange) {
             if (!(message is ChannelMessage channel))
@@ -192,6 +196,18 @@ namespace Pooshit.AudioSynth.Sequencing {
                             bendRange[channel.MidiChannel] = channel.Data2;
                         break;
                     }
+                    if (channel.Data1 == (byte)ControllerType.AllSoundOff) {
+                        synthesizer.SilenceChannel(channel.MidiChannel);
+                        break;
+                    }
+                    if (channel.Data1 == (byte)ControllerType.AllNotesOff) {
+                        synthesizer.ReleaseAllNotes(channel.MidiChannel);
+                        break;
+                    }
+                    if (channel.Data1 == (byte)ControllerType.AllControllersOff) {
+                        ResetAllControllers(channel.MidiChannel, synthesizer, cc7, cc11, selectedRpn);
+                        break;
+                    }
                     if (channel.Data1 == (byte)ControllerType.Volume)
                         cc7[channel.MidiChannel] = channel.Data2;
                     else if (channel.Data1 == (byte)ControllerType.Expression)
@@ -206,6 +222,30 @@ namespace Pooshit.AudioSynth.Sequencing {
                     synthesizer.SetChannelPitchBend(channel.MidiChannel, semitones);
                     break;
             }
+        }
+
+        /// <summary>
+        /// CC121 (Reset All Controllers, GM channel-mode): resets a channel's <em>controller</em> state
+        /// to GM defaults via existing seams — modulation (CC1) to 0, expression (CC11) to
+        /// <see cref="DefaultExpression"/> (recomputing gain with <paramref name="cc7"/> preserved),
+        /// sustain (CC64) off (which itself sweeps and releases any pedal-deferred voice), pitch-bend to
+        /// center, and the RPN selector to <see cref="RpnNull"/>. Deliberately a strict subset of the
+        /// full GM-reset loop in <see cref="Render"/>: pan, program/bank, reverb send (CC91), chorus send
+        /// (CC93), <paramref name="cc7"/> (volume) itself, and the stored <c>bendRange</c> value are all
+        /// untouched (design #7245 §4/§11) — do not refactor this to call the startup reset loop, which
+        /// resets strictly more than GM RAC specifies.
+        /// </summary>
+        static void ResetAllControllers(int channel, ISynthesizer synthesizer, int[] cc7, int[] cc11, int[] selectedRpn) {
+            synthesizer.SetChannelModulation(channel, 0f);
+
+            cc11[channel] = DefaultExpression;
+            synthesizer.SetChannelGain(channel, ChannelGain(cc7[channel], cc11[channel]));
+
+            synthesizer.SetChannelSustain(channel, false);
+
+            synthesizer.SetChannelPitchBend(channel, 0f);
+
+            selectedRpn[channel] = RpnNull;
         }
 
         static IPatch ResolveProgramPatch(SoundBank soundBank, int channel, int program) {

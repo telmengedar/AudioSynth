@@ -64,6 +64,16 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         /// </summary>
         internal List<(int Channel, int Key, int Velocity)> NoteOnCalls { get; } = new List<(int, int, int)>();
 
+        /// <summary>
+        /// Every channel passed to <see cref="SilenceChannel"/>, in call order.
+        /// </summary>
+        internal List<int> SilenceChannelCalls { get; } = new List<int>();
+
+        /// <summary>
+        /// Every channel passed to <see cref="ReleaseAllNotes"/>, in call order.
+        /// </summary>
+        internal List<int> ReleaseAllNotesCalls { get; } = new List<int>();
+
         /// <inheritdoc/>
         public void SetChannelPatch(int channel, IPatch patch) => ChannelPatchCalls.Add((channel, patch));
 
@@ -87,6 +97,12 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
 
         /// <inheritdoc/>
         public void SetChannelSustain(int channel, bool held) => ChannelSustainCalls.Add((channel, held));
+
+        /// <inheritdoc/>
+        public void SilenceChannel(int channel) => SilenceChannelCalls.Add(channel);
+
+        /// <inheritdoc/>
+        public void ReleaseAllNotes(int channel) => ReleaseAllNotesCalls.Add(channel);
 
         /// <inheritdoc/>
         public void NoteOn(int channel, int key, int velocity) => NoteOnCalls.Add((channel, key, velocity));
