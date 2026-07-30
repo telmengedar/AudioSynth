@@ -4,9 +4,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
     /// <summary>
     /// One entry produced by <see cref="Sf2RegionResolver.ResolveAll"/>: a resolved <see cref="SampleRegion"/>
-    /// paired with the opaque cache key identifying the exact (preset zone, instrument zone) pair it came
-    /// from, so <see cref="Sf2Patch"/> can cache one <c>SamplePatch</c> per distinct pair across note-ons
-    /// (SF2 zone/layer stacking, DiVoid #7282 §7).
+    /// paired with the opaque cache key for the (preset zone, instrument zone) pair it came from.
     /// </summary>
     public readonly struct Sf2ResolvedLayer {
 

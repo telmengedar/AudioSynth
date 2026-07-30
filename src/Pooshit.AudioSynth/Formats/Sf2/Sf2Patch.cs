@@ -7,25 +7,16 @@ using Pooshit.AudioSynth.Synthesis.Voices;
 namespace Pooshit.AudioSynth.Formats.Sf2 {
 
     /// <summary>
-    /// An SF2 preset exposed through the <see cref="IPatch"/> seam.  Carries the parsed
-    /// <see cref="Sf2PresetHeader"/>, the shared sample-data pool, and all sample headers.
-    /// <see cref="StartVoice"/> resolves preset → instrument → zone → sample and returns a live
-    /// voice, or an inactive no-op voice when no zone covers the note. Also implements
-    /// <see cref="IMultiVoicePatch"/> (<see cref="StartVoices"/>): SF2 zone/layer stacking (DiVoid
-    /// #7282) — starts one voice per covering (preset zone, instrument zone) pair, up to
-    /// <see cref="MaxLayersPerNote"/>, so overlapping zones (e.g. a tonal zone plus a near-0-cB
-    /// attack/click companion zone) sound together instead of only the first match.
+    /// An SF2 preset exposed through the <see cref="IPatch"/> seam. <see cref="StartVoice"/> resolves
+    /// preset → instrument → zone → sample and returns a live voice, or an inactive no-op voice when no
+    /// zone covers the note. Also implements <see cref="IMultiVoicePatch"/> (<see cref="StartVoices"/>)
+    /// for SF2 zone/layer stacking: starts one voice per covering (preset zone, instrument zone) pair, up
+    /// to <see cref="MaxLayersPerNote"/>, so overlapping zones sound together.
     /// </summary>
     public sealed class Sf2Patch : IMultiVoicePatch {
 
-        /// <summary>
-        /// Upper bound on simultaneous layers started for one note-on, applied when materialising
-        /// <see cref="Sf2RegionResolver.ResolveAll"/>'s layer set (the first N in resolver order are
-        /// kept). SF2 imposes no cap, but an unbounded preset-zone × instrument-zone cartesian could, on
-        /// a pathological font, request many voices per note and starve polyphony; OmegaGMGS2's real
-        /// overlapping-zone count per note is ~2–3, so 4 is comfortable headroom (DiVoid #7282 §9.3,
-        /// #7283 locked decision 1).
-        /// </summary>
+        // Upper bound on simultaneous layers per note-on (the first N of ResolveAll's set are kept), so a
+        // pathological font can't request unbounded voices and starve polyphony.
         const int MaxLayersPerNote = 4;
 
         readonly int outputSampleRate;
@@ -96,12 +87,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Starts every voice needed for one note-on: resolves ALL covering (preset zone, instrument
-        /// zone) pairs via <see cref="Sf2RegionResolver.ResolveAll"/> (SF2 zone/layer stacking, DiVoid
-        /// #7282), caps the layer set at <see cref="MaxLayersPerNote"/> (emitting the first N in
-        /// resolver order), and appends one live voice per kept layer to <paramref name="voices"/>. A
-        /// preset with no covering zone appends nothing, matching <see cref="StartVoice"/>'s
-        /// <see cref="InactiveVoice"/> no-match case but without occupying an engine slot for it.
+        /// Starts every voice needed for one note-on: resolves all covering (preset zone, instrument
+        /// zone) pairs via <see cref="Sf2RegionResolver.ResolveAll"/>, caps the set at
+        /// <see cref="MaxLayersPerNote"/>, and appends one live voice per kept layer to
+        /// <paramref name="voices"/>. Appends nothing when no zone covers the note.
         /// </summary>
         /// <param name="key">MIDI key number (0–127)</param>
         /// <param name="velocity">MIDI velocity (0–127)</param>
@@ -119,11 +108,6 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             }
         }
 
-        /// <summary>
-        /// Looks up (or creates and caches) the <see cref="SamplePatch"/> for a resolved region's cache
-        /// key, shared by <see cref="StartVoice"/> and <see cref="StartVoices"/> so both single-match and
-        /// stacked resolution reuse the same per-region cache.
-        /// </summary>
         SamplePatch GetOrCreateRegionPatch(long cacheKey, SampleRegion region) {
             if (!regionCache.TryGetValue(cacheKey, out SamplePatch? patch)) {
                 patch = new SamplePatch(region, outputSampleRate);

@@ -5,8 +5,8 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
 
     /// <summary>
     /// Test-only <see cref="IMultiVoicePatch"/> that starts a fixed number of <see cref="RecordingExclusiveVoice"/>
-    /// layers per note-on, recording every started voice so SF2 zone/layer stacking engine tests (DiVoid
-    /// #7282) can assert on slot placement, release, and choke behaviour without needing a real SF2 preset.
+    /// layers per note-on, recording every started voice so zone/layer stacking tests can assert on slot
+    /// placement, release, and choke behaviour without needing a real SF2 preset.
     /// </summary>
     internal sealed class MultiVoicePatch : IMultiVoicePatch {
 

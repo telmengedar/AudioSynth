@@ -7,13 +7,10 @@ using Pooshit.AudioSynth.Synthesis;
 namespace Pooshit.AudioSynth.Tests {
 
     /// <summary>
-    /// <see cref="Sf2Patch"/>-level tests for SF2 zone/layer stacking (DiVoid #7282): <see cref="Sf2Patch.StartVoices"/>
+    /// <see cref="Sf2Patch"/>-level tests for SF2 zone/layer stacking: <see cref="Sf2Patch.StartVoices"/>
     /// must materialise every layer <see cref="Sf2RegionResolver.ResolveAll"/> resolves into a live voice,
-    /// respecting the <c>MaxLayersPerNote</c> cap (locked at 4, DiVoid #7283 decision 1), while
-    /// <see cref="Sf2Patch.StartVoice"/> keeps returning exactly the single first-match voice for callers
-    /// that only want one (backward compatibility with every pre-stacking call site). All tests construct
-    /// SF2 model objects directly without going through the binary loader, mirroring
-    /// <see cref="Sf2RegionResolverTests"/>'s style.
+    /// respecting the <c>MaxLayersPerNote</c> cap, while <see cref="Sf2Patch.StartVoice"/> keeps returning
+    /// exactly the single first-match voice for backward compatibility.
     /// </summary>
     [TestFixture]
     public class Sf2ZoneStackingTests {

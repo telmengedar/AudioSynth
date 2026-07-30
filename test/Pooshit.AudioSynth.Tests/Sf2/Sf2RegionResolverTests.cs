@@ -1108,8 +1108,6 @@ namespace Pooshit.AudioSynth.Tests {
 
         static float AttenuationGain(int centibels) => (float)Math.Pow(10.0, -EmuAttenuationScale * centibels / 200.0);
 
-        // --- Phase 1: general preset-generator additive routing (DiVoid #7327 §8.1, #7325) ---
-
         [Test]
         [Description("A preset-level Pan(17) generator (NOT gen-48) now additively offsets the " +
                      "instrument-level Pan via the general EffectiveValue combiner -- closing the " +
