@@ -14,7 +14,10 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// caller's control rate, so the per-sample hot path stays allocation- and transcendental-free.  An
     /// open cutoff is realised as an exact passthrough, and cutoff and resonance are clamped so the
     /// coefficients are always finite and the section never itself produces NaN or infinity (INV-2
-    /// support; <see cref="Synthesizer"/> remains the final choke point).
+    /// support; <see cref="Synthesizer"/> remains the final choke point).  The b-coefficients carry a
+    /// <c>1/√Q</c> passband-gain compensation (source-confirmed against FluidSynth 2.5.7
+    /// <c>fluid_iir_filter_impl.cpp</c>'s <c>GAIN_NORM</c> path), matching FluidSynth's reduced passband
+    /// gain as resonance rises; the RBJ formulas alone give unity passband gain regardless of Q.
     /// </summary>
     public struct BiquadLowPassFilter {
 
@@ -25,6 +28,7 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         readonly int sampleRate;
         readonly float q;
+        readonly float filterGain;
 
         bool bypass;
         float b0;
@@ -50,6 +54,7 @@ namespace Pooshit.AudioSynth.Synthesis {
 
             this.sampleRate = sampleRate;
             q = Clamp(parameters.Resonance, MinResonance, MaxResonance);
+            filterGain = 1f / (float)Math.Sqrt(q);
             state1 = 0f;
             state2 = 0f;
             bypass = false;
@@ -115,9 +120,9 @@ namespace Pooshit.AudioSynth.Synthesis {
             double normA1 = -2.0 * cosW0;
             double normA2 = 1.0 - alpha;
 
-            b0 = (float)(normB0 / normA0);
-            b1 = (float)(normB1 / normA0);
-            b2 = (float)(normB2 / normA0);
+            b0 = (float)(normB0 / normA0) * filterGain;
+            b1 = (float)(normB1 / normA0) * filterGain;
+            b2 = (float)(normB2 / normA0) * filterGain;
             a1 = (float)(normA1 / normA0);
             a2 = (float)(normA2 / normA0);
         }

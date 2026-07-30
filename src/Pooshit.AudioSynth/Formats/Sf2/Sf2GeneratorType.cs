@@ -27,7 +27,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// <summary>Vibrato LFO to pitch (centibels).</summary>
         VibratoLFOToPitch = 6,
 
-        /// <summary>Modulation envelope to pitch (centibels).</summary>
+        /// <summary>Modulation envelope to pitch (cents).</summary>
         ModulationEnvelopeToPitch = 7,
 
         /// <summary>Initial filter cutoff frequency (absolute cents).</summary>
@@ -39,7 +39,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// <summary>Modulation LFO to filter cutoff frequency (cents).</summary>
         ModulationLFOToFilterCutoffFrequency = 10,
 
-        /// <summary>Modulation envelope to filter cutoff frequency (centibels).</summary>
+        /// <summary>Modulation envelope to filter cutoff frequency (cents).</summary>
         ModulationEnvelopeToFilterCutoffFrequency = 11,
 
         /// <summary>Sample end point coarse offset (×32768 sample data points).</summary>
@@ -93,16 +93,16 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// <summary>Decay of modulation envelope (timecents).</summary>
         DecayModulationEnvelope = 28,
 
-        /// <summary>Sustain of modulation envelope (centibels).</summary>
+        /// <summary>Sustain of modulation envelope (0.1% units, decrease from full).</summary>
         SustainModulationEnvelope = 29,
 
         /// <summary>Release of modulation envelope (timecents).</summary>
         ReleaseModulationEnvelope = 30,
 
-        /// <summary>MIDI key number to modulation envelope hold (centibels/key).</summary>
+        /// <summary>MIDI key number to modulation envelope hold (timecents/key).</summary>
         KeyNumberToModulationEnvelopeHold = 31,
 
-        /// <summary>MIDI key number to modulation envelope decay (centibels/key).</summary>
+        /// <summary>MIDI key number to modulation envelope decay (timecents/key).</summary>
         KeyNumberToModulationEnvelopeDecay = 32,
 
         /// <summary>Delay of volume envelope (timecents).</summary>

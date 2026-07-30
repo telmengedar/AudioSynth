@@ -157,6 +157,40 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
+        [Description("Resonance passband-gain compensation, source-confirmed against FluidSynth 2.5.7 " +
+            "fluid_iir_filter_impl.cpp's GAIN_NORM path (filter_gain /= sqrt(q)): the steady-state DC gain " +
+            "equals 1/sqrt(Q), not the RBJ cookbook's unbounded unity passband gain.")]
+        public void SteadyStateDcGain_MatchesInverseSqrtQ_ResonanceCompensation() {
+            foreach (float q in new[] { FilterParameters.ButterworthResonance, 1f, 4f, 16f }) {
+                BiquadLowPassFilter filter = new BiquadLowPassFilter(new FilterParameters(2000f, q), SampleRate);
+                float output = 0f;
+                for (int i = 0; i < 5000; i++)
+                    output = filter.Process(1f);
+
+                float expectedGain = 1f / (float)Math.Sqrt(q);
+                Assert.That(output, Is.EqualTo(expectedGain).Within(0.01f),
+                    $"steady-state DC gain at Q={q} was {output}; expected 1/sqrt(Q)={expectedGain}.");
+            }
+        }
+
+        [Test]
+        [Description("Resonance-gain compensation scales the whole transfer function, so it does not change " +
+            "the relative shape check: a resonant peak at cutoff still exceeds the flat response even after " +
+            "compensation is applied to both.")]
+        public void HigherResonance_StillBoostsEnergyAtCutoff_WithGainCompensation() {
+            const float cutoff = 1000f;
+            float[] toneAtCutoff = Tone(cutoff, SampleRate, SampleRate);
+
+            float flat = Rms(Slice(
+                Filtered(toneAtCutoff, new FilterParameters(cutoff, FilterParameters.ButterworthResonance), SampleRate), 2000));
+            float resonant = Rms(Slice(
+                Filtered(toneAtCutoff, new FilterParameters(cutoff, 8f), SampleRate), 2000));
+
+            Assert.That(resonant, Is.GreaterThan(flat),
+                $"resonant response at cutoff ({resonant}) should exceed the flat response ({flat}) even with gain compensation applied to both.");
+        }
+
+        [Test]
         [Description("SetCutoff clamps exactly as the constructor does, so finite output is preserved (INV-2) " +
             "even when swept to an extreme cutoff.")]
         public void SetCutoff_ExtremeCutoff_ProducesFiniteOutput() {

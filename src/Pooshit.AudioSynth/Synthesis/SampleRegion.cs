@@ -50,6 +50,16 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// gen-48 at both levels produces. Applied as a fixed multiplier alongside — not in place of —
         /// velocity gain, channel gain, pan, and the volume envelope.
         /// </param>
+        /// <param name="modEnv">
+        /// key-independent modulation-envelope parameters (SF2 gens 25, 26, 29, 30 plus gens 27/28 resolved
+        /// as if key 60); defaults to <see cref="ModulationEnvelopeParameters.Default"/>. Hold and decay are
+        /// re-resolved per note from <paramref name="modEnvHoldTimecents"/>/<paramref name="modEnvDecayTimecents"/>
+        /// (see <see cref="Patches.SamplePatch.StartVoice"/>), since they depend on the played key.
+        /// </param>
+        /// <param name="modEnvHoldTimecents">raw effective mod-envelope hold time (SF2 gen-27, timecents) before keynum scaling</param>
+        /// <param name="modEnvDecayTimecents">raw effective mod-envelope decay time (SF2 gen-28, timecents) before keynum scaling</param>
+        /// <param name="modEnvHoldKeynumCents">keynum-to-mod-envelope-hold coefficient (SF2 gen-31, timecents/key)</param>
+        /// <param name="modEnvDecayKeynumCents">keynum-to-mod-envelope-decay coefficient (SF2 gen-32, timecents/key)</param>
         public SampleRegion(
             float[] buffer,
             int start,
@@ -67,7 +77,12 @@ namespace Pooshit.AudioSynth.Synthesis {
             float reverbSend = 1f,
             float chorusSend = 0f,
             int exclusiveClass = 0,
-            float initialAttenuationGain = 1f) {
+            float initialAttenuationGain = 1f,
+            ModulationEnvelopeParameters? modEnv = null,
+            float modEnvHoldTimecents = -12000f,
+            float modEnvDecayTimecents = -12000f,
+            float modEnvHoldKeynumCents = 0f,
+            float modEnvDecayKeynumCents = 0f) {
             if (buffer is null)
                 throw new ArgumentNullException(nameof(buffer));
             if (start < 0 || start >= buffer.Length)
@@ -101,6 +116,11 @@ namespace Pooshit.AudioSynth.Synthesis {
             ChorusSend = chorusSend;
             ExclusiveClass = exclusiveClass;
             InitialAttenuationGain = initialAttenuationGain;
+            ModEnv = modEnv ?? ModulationEnvelopeParameters.Default;
+            ModEnvHoldTimecents = modEnvHoldTimecents;
+            ModEnvDecayTimecents = modEnvDecayTimecents;
+            ModEnvHoldKeynumCents = modEnvHoldKeynumCents;
+            ModEnvDecayKeynumCents = modEnvDecayKeynumCents;
         }
 
         /// <summary>
@@ -195,5 +215,24 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// applied alongside, not in place of, channel gain, pan, and the volume envelope.
         /// </summary>
         public float InitialAttenuationGain { get; }
+
+        /// <summary>
+        /// Key-independent modulation-envelope parameters; hold/decay are resolved as if key 60 and are
+        /// re-resolved per note by <see cref="Patches.SamplePatch.StartVoice"/> using
+        /// <see cref="ModEnvHoldTimecents"/>/<see cref="ModEnvDecayTimecents"/> and the keynum coefficients.
+        /// </summary>
+        public ModulationEnvelopeParameters ModEnv { get; }
+
+        /// <summary>Raw effective mod-envelope hold time (SF2 gen-27, timecents) before keynum scaling.</summary>
+        public float ModEnvHoldTimecents { get; }
+
+        /// <summary>Raw effective mod-envelope decay time (SF2 gen-28, timecents) before keynum scaling.</summary>
+        public float ModEnvDecayTimecents { get; }
+
+        /// <summary>Keynum-to-mod-envelope-hold coefficient (SF2 gen-31, timecents/key).</summary>
+        public float ModEnvHoldKeynumCents { get; }
+
+        /// <summary>Keynum-to-mod-envelope-decay coefficient (SF2 gen-32, timecents/key).</summary>
+        public float ModEnvDecayKeynumCents { get; }
     }
 }

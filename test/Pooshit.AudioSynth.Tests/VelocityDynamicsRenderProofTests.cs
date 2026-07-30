@@ -21,12 +21,15 @@ namespace Pooshit.AudioSynth.Tests {
         const int InternalBlockFrames = 64;
         const float DcValue = 0.8f;
 
+        // Stays open even after the largest velocity-to-cutoff offset (-2400 cents at velocity 0), isolating the gain curve.
+        static readonly FilterParameters SafelyOpenFilter = new FilterParameters(FilterParameters.CentsToHz(16500f), FilterParameters.ButterworthResonance);
+
         static SampleRegion BuildDcRegion(int length) {
             float[] buffer = new float[length];
             for (int i = 0; i < length; i++)
                 buffer[i] = DcValue;
             return new SampleRegion(buffer, 0, length, 0, length, LoopMode.Continuous, SampleRate, 60, 0,
-                EnvelopeParameters.Default, FilterParameters.Default, LfoParameters.Default, 0f);
+                EnvelopeParameters.Default, SafelyOpenFilter, LfoParameters.Default, 0f);
         }
 
         static float SteadyStatePeak(int velocity) {
