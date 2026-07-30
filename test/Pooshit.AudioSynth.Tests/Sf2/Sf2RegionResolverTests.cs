@@ -1054,6 +1054,38 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
+        [Description("SF2 zone/layer stacking cache-key correctness (DiVoid #7282 §7, review #7287 " +
+                     "warning #3): two preset zones sharing the SAME instrument zone (instrumentIndex=0, " +
+                     "instrumentZoneIndex=0) but carrying DIFFERENT preset-level InitialAttenuation must " +
+                     "resolve to two layers with DISTINCT cache keys and DISTINCT accumulated gain -- " +
+                     "proving the cache doesn't collide two regions that only differ by which preset zone " +
+                     "reached them (the exact collision the 3-field PackCacheKey exists to prevent; a " +
+                     "2-field (instrument, instrumentZone) key would merge both onto the same cached " +
+                     "region).")]
+        public void ResolveAll_TwoPresetZonesSharingOneInstrumentZone_ProduceDistinctCacheKeysAndGains() {
+            Sf2Zone[] presetZones = new[] {
+                Zone(Gen(Sf2GeneratorType.Instrument, 0), Gen(Sf2GeneratorType.InitialAttenuation, 40)),
+                Zone(Gen(Sf2GeneratorType.Instrument, 0), Gen(Sf2GeneratorType.InitialAttenuation, 100))
+            };
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { InstrumentZone(0, 127) });
+
+            List<Sf2ResolvedLayer> results = new List<Sf2ResolvedLayer>();
+            int count = resolver.ResolveAll(60, 100, results);
+
+            Assert.That(count, Is.EqualTo(2),
+                "both preset zones cover the note and share the same instrument zone; both must be emitted as layers.");
+            Assert.That(results[0].CacheKey, Is.Not.EqualTo(results[1].CacheKey),
+                "layers reached through different preset zones but the SAME instrument zone must get distinct cache keys.");
+            Assert.That(results[0].Region.InitialAttenuationGain, Is.Not.EqualTo(results[1].Region.InitialAttenuationGain),
+                "the two preset zones' different InitialAttenuation (40 cB vs 100 cB) must produce different " +
+                "accumulated gain, proving they weren't merged onto one cached region.");
+            Assert.That(results[0].Region.InitialAttenuationGain, Is.EqualTo(AttenuationGain(40)).Within(0.005f),
+                "first layer (preset zone[0], 40 cB) must carry its own accumulated gain.");
+            Assert.That(results[1].Region.InitialAttenuationGain, Is.EqualTo(AttenuationGain(100)).Within(0.005f),
+                "second layer (preset zone[1], 100 cB) must carry its own accumulated gain, distinct from the first.");
+        }
+
+        [Test]
         [Description("ResolveAll returns zero layers, appending nothing, when no zone covers the note " +
                      "(mirrors TryResolve's false/no-match case).")]
         public void ResolveAll_NoCoveringZone_ReturnsZeroLayers() {
