@@ -24,11 +24,21 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         /// </summary>
         internal bool FastFadeForStealCalled { get; private set; }
 
+        /// <summary>
+        /// True once the engine has called <see cref="Release"/> on this voice (e.g. via
+        /// <see cref="ISynthesizer.NoteOff"/> or <see cref="ISynthesizer.ReleaseAllNotes"/>), so
+        /// stacking tests (DiVoid #7282) can assert every layer of a note was released together
+        /// without needing to inspect the engine's private voice pool directly.
+        /// </summary>
+        internal bool ReleaseCalled { get; private set; }
+
         /// <inheritdoc/>
         public bool IsActive => true;
 
         /// <inheritdoc/>
-        public void Release() { }
+        public void Release() {
+            ReleaseCalled = true;
+        }
 
         /// <inheritdoc/>
         public void SetPitchBend(float pitchFactor) { }
