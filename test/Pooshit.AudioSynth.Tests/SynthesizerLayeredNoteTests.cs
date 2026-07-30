@@ -7,12 +7,11 @@ using Pooshit.AudioSynth.Tests.Helpers;
 namespace Pooshit.AudioSynth.Tests {
 
     /// <summary>
-    /// Engine-level tests for SF2 zone/layer stacking (DiVoid #7282): when a channel's patch is an
+    /// Engine-level tests for SF2 zone/layer stacking: when a channel's patch is an
     /// <see cref="IMultiVoicePatch"/>, <see cref="Synthesizer.NoteOn"/> must start every layer the patch
-    /// resolves, give each its own pool slot sharing <c>(channel, key)</c>, release every layer together
-    /// through <see cref="Synthesizer.NoteOff"/>/<see cref="Synthesizer.ReleaseAllNotes"/>/
-    /// <see cref="Synthesizer.SilenceChannel"/>, and never let stacked layers of the same note choke each
-    /// other via the gen-57 exclusive-class mechanism (DiVoid #7226/#7227).
+    /// resolves, give each its own pool slot sharing <c>(channel, key)</c>, release every layer together,
+    /// and never let stacked layers of the same note choke each other via the gen-57 exclusive-class
+    /// mechanism.
     /// </summary>
     [TestFixture]
     public class SynthesizerLayeredNoteTests {

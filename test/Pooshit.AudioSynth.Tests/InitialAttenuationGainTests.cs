@@ -8,11 +8,9 @@ using Pooshit.AudioSynth.Synthesis.Patches;
 namespace Pooshit.AudioSynth.Tests {
 
     /// <summary>
-    /// Render-level regression tests for SF2 generator 48 (InitialAttenuation), DiVoid #7269:
+    /// Render-level regression tests for SF2 generator 48 (InitialAttenuation):
     /// <see cref="SampleRegion.InitialAttenuationGain"/> must fold into <see cref="SamplePatch.StartVoice"/>'s
-    /// velocity-derived target gain as a static multiplier, alongside (not replacing) velocity gain, so a
-    /// region carrying attenuation renders proportionally quieter at steady state than an identical region
-    /// with no attenuation.
+    /// velocity-derived target gain as a static multiplier, alongside (not replacing) velocity gain.
     /// </summary>
     public class InitialAttenuationGainTests {
 

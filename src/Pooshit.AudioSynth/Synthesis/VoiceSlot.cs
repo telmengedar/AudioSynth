@@ -75,17 +75,12 @@ namespace Pooshit.AudioSynth.Synthesis {
         public int PendingVelocity;
 
         /// <summary>
-        /// A pre-built voice deferred behind this slot's declick fade-out, or <c>null</c>. Set when SF2
-        /// zone/layer stacking (DiVoid #7282) steals a slot for one layer of a multi-layer note-on: unlike
-        /// the legacy single-voice steal path (which re-derives the voice from <see cref="PendingChannel"/>/
-        /// <see cref="PendingKey"/>/<see cref="PendingVelocity"/> via a fresh <see cref="IPatch.StartVoice"/>
-        /// call once the outgoing voice reaches silence), a stacked note resolves ALL of its layers up
-        /// front in one <see cref="ISynthesizer.NoteOn"/> call — re-deriving later via key/velocity alone
-        /// could not reproduce which SPECIFIC layer this slot was holding, since resolution would just
-        /// pick an arbitrary (deterministic-but-wrong) layer again. Storing the already-constructed
-        /// <see cref="IVoice"/> instead sidesteps that: placement (bend/mod-wheel/age/choke) still happens
-        /// only when the slot actually starts sounding, exactly as before — only the point where the voice
-        /// object itself is constructed moves earlier, which is unobservable in the rendered output.
+        /// A pre-built voice deferred behind this slot's declick fade-out, or <c>null</c>. Used by
+        /// multi-layer note-on (SF2 zone/layer stacking), which resolves all of a note's layers up front:
+        /// unlike the single-voice steal path (which re-derives the voice from
+        /// <see cref="PendingChannel"/>/<see cref="PendingKey"/>/<see cref="PendingVelocity"/> later),
+        /// re-deriving a specific stacked layer from key/velocity alone could pick the wrong one, so the
+        /// already-constructed voice is stored instead.
         /// </summary>
         public IVoice? PendingVoice;
     }

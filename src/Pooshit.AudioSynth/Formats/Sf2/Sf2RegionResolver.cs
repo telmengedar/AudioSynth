@@ -6,36 +6,22 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
     /// <summary>
     /// Resolves a MIDI (key, velocity) pair through the SF2 two-level zone model to a
-    /// <see cref="SampleRegion"/> (<see cref="TryResolve"/>, single first-covering-zone match) or to
-    /// every covering zone at once (<see cref="ResolveAll"/>, the full preset-zone × instrument-zone
-    /// cartesian — SF2 zone/layer stacking, DiVoid #7282), implementing the v1 generator subset plus the
-    /// general preset-level generator routing combiner (<see cref="EffectiveValue"/>, DiVoid #7327 §8.1 /
-    /// #7325): every "value" generator (filter, LFO, pan, sends, tuning, envelope times/sustain, and
-    /// InitialAttenuation(48)) is resolved as instrument-effective + preset-additive, not just gen-48 as
-    /// before. This is the single home for all SF2 interpretation; later generator families (offset
-    /// generators, modulation envelope) attach here.
+    /// <see cref="SampleRegion"/> (<see cref="TryResolve"/>, single first-covering-zone match) or to every
+    /// covering zone at once (<see cref="ResolveAll"/>, the full preset-zone × instrument-zone cartesian
+    /// for zone/layer stacking). Every "value" generator (filter, LFO, pan, sends, tuning, envelope
+    /// times/sustain, InitialAttenuation) resolves as instrument-effective + preset-additive via
+    /// <see cref="EffectiveValue"/>. Resolution never throws on the note path; a structurally-invalid zone
+    /// degrades to no-match instead.
     /// </summary>
-    /// <remarks>
-    /// Resolution is deterministic, rate-independent, and defensive: structurally-valid-but-
-    /// musically-imperfect SF2 content degrades to no-match rather than throwing on the note path.
-    /// </remarks>
     public sealed class Sf2RegionResolver {
 
         const int DefaultEnvelopeTimecents = -12000;
         const float MaxEnvelopeSeconds = 20f;
         const int MaxSustainAttenuationCentibels = 1440;
 
-        /// <summary>
-        /// EMU-10K1-hardware-derived scale applied to InitialAttenuation(48) only, restoring the
-        /// convention many GS-family SF2 fonts (e.g. OmegaGMGS2) are authored against. Empirically
-        /// measured against FluidSynth 2.5.7 single-note isolation renders: effective scale = 0.412
-        /// (linear-fit slope across gen-48 = 0/80/150 cB single-zone presets), independently confirmed
-        /// by the 0.4x-scaled render collapsing those same presets' spread from 8.8 dB to 0.4 dB
-        /// (DiVoid #7305). 0.4 sits well within the +/-2 dB target of the 0.412 optimum.
-        /// DO NOT remove/revert this constant without re-litigating #7305 (and the reverted history at
-        /// #7273/#7281/#7282 it corrects) — a prior revision of this file reverted an identical 0.4
-        /// scale on the (empirically wrong) premise that FluidSynth applies gen-48 literally.
-        /// </summary>
+        // EMU-10K1-derived scale for InitialAttenuation(48) only, matching FluidSynth's measured effective
+        // scale (~0.412) rather than the SF2 spec's literal conversion. Do not revert to literal without
+        // re-verifying against a real FluidSynth render — a prior revision did, and was wrong.
         const double EmuAttenuationScale = 0.4;
 
         const int DefaultFilterCutoffCents = 13500;
@@ -140,26 +126,15 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
         /// <summary>
         /// Resolves <paramref name="key"/> and <paramref name="velocity"/> to <b>every</b> covering
-        /// (preset zone, instrument zone) pair — the full cartesian product, not just the first match —
-        /// so that overlapping zones stack into multiple simultaneous layers while non-overlapping
-        /// velocity splits still resolve to exactly one (SF2 zone/layer stacking, DiVoid #7282 §8.1).
-        /// A zone "covers" the note when its KeyRange AND VelocityRange (local-then-global-zone
-        /// inheritance, via <see cref="ZoneCoversNote"/>) include it — the identical rule
-        /// <see cref="TryResolve"/> uses for a single match, applied exhaustively instead of stopping at
-        /// the first hit. Global zones (preset-level and instrument-level) are never themselves emitted
-        /// as layers; they only supply generator defaults to the zones that inherit from them. Ordering
-        /// is deterministic (preset-zone source order, then instrument-zone source order within each),
-        /// so caching on the returned <see cref="Sf2ResolvedLayer.CacheKey"/> and tests are reproducible.
-        /// A structurally-invalid zone (bad sample bounds, missing SampleID) is skipped defensively — it
-        /// never aborts the rest of the stack, matching <see cref="TryResolve"/>'s no-throw-on-note-path
-        /// contract.
+        /// (preset zone, instrument zone) pair, not just the first match, so overlapping zones stack into
+        /// simultaneous layers while non-overlapping velocity splits still resolve to exactly one. Global
+        /// zones are never emitted as layers themselves; they only supply generator defaults. Ordering is
+        /// deterministic (preset-zone then instrument-zone source order). An invalid zone is skipped, not
+        /// thrown on.
         /// </summary>
         /// <param name="key">MIDI key number (0–127)</param>
         /// <param name="velocity">MIDI velocity (0–127)</param>
-        /// <param name="results">
-        /// cleared by the caller before calling (not by this method, so the caller controls buffer
-        /// reuse); every covering layer is appended in deterministic order. Empty on no-match.
-        /// </param>
+        /// <param name="results">buffer to append to; cleared by the caller, not this method</param>
         /// <returns>the number of layers appended to <paramref name="results"/></returns>
         public int ResolveAll(int key, int velocity, List<Sf2ResolvedLayer> results) {
             Sf2Zone[] presetZones = preset.Zones;
@@ -216,12 +191,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Packs (presetZoneIndex, instrumentIndex, instrumentZoneIndex) into a single opaque cache key.
-        /// Distinct from <see cref="TryResolve"/>'s 2-field key: the same instrument zone reached through
-        /// two different preset zones bakes a different accumulated InitialAttenuation into its region
-        /// (SF2 §8.1.2 additive accumulation), so presetZoneIndex must be part of the key or two distinct
-        /// regions would collide onto the same cached <c>SamplePatch</c> (DiVoid #7282 §7). Each field gets
-        /// 20 bits (up to ~1,048,575), far beyond any realistic SF2 zone/instrument count.
+        /// Packs (presetZoneIndex, instrumentIndex, instrumentZoneIndex) into a single opaque cache key,
+        /// 20 bits per field. presetZoneIndex must be included: the same instrument zone reached through
+        /// two different preset zones can accumulate a different InitialAttenuation, so it needs its own
+        /// cache entry rather than colliding onto one.
         /// </summary>
         static long PackCacheKey(int presetZoneIndex, int instrumentIndex, int instrumentZoneIndex) =>
             ((long)(presetZoneIndex & 0xFFFFF) << 40)
@@ -367,21 +340,12 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Reads generator 48 (InitialAttenuation, centibels) via the general <see cref="EffectiveValue"/>
-        /// preset-generator-routing combiner — SF2 spec §8.1.2/§9.4 defines InitialAttenuation as additive
-        /// across the preset and instrument generator levels, unlike a plain override — then converts the
-        /// combined total to a linear gain via <see cref="AttenuationCentibelsToLinear"/>. This is gen-48's
-        /// fold-in to the general mechanism (DiVoid #7327 §8.1/§14 PR1 step 3): the manual dual-read this
-        /// method used to perform (instrument value + preset value, summed by hand) is now exactly what
-        /// <see cref="EffectiveValue"/> computes for every generator, so there is no separate code path
-        /// left to double-apply — deleting the old dual-read and routing through <see cref="EffectiveValue"/>
-        /// is bit-for-bit identical to the prior behavior (instrument-effective default 0, preset-additive
-        /// default 0, summed). Absent gen-48 at both levels sums to 0 cB, which maps to a gain of 1.0, so
-        /// the region's amplitude is unchanged from before this generator was read. Uses its own named
-        /// conversion, kept separate from the shared <see cref="CentibelsToLinear"/> used by the
-        /// volume-envelope sustain level (gen-37) — the two have diverged (gen-48 carries the
-        /// <see cref="EmuAttenuationScale"/> pre-scale, gen-37 does not), and a distinct method + doc
-        /// comment prevents a future dev from re-coupling them (DiVoid #7282 §8.4, #7305).
+        /// Reads generator 48 (InitialAttenuation, centibels) via <see cref="EffectiveValue"/> — additive
+        /// across preset and instrument levels per the SF2 spec — and converts the total to linear gain
+        /// via <see cref="AttenuationCentibelsToLinear"/>. Absent at both levels sums to 0 cB (gain 1.0,
+        /// unchanged). Uses its own conversion rather than the shared <see cref="CentibelsToLinear"/>
+        /// (gen-37's), since gen-48 carries the <see cref="EmuAttenuationScale"/> pre-scale and gen-37
+        /// does not.
         /// </summary>
         static float BuildInitialAttenuationGain(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
             int totalCentibels = EffectiveValue(
@@ -390,31 +354,16 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// The general preset-generator routing combiner (SF2 §9.4, DiVoid #7327 §8.1): the effective
-        /// value of a "value" generator is <c>instrumentEffective + presetAdditive</c>, where
-        /// <c>instrumentEffective</c> is the existing instrument-level resolution (local zone override,
-        /// else instrument global zone, else <paramref name="instrumentDefault"/> — unchanged from
-        /// pre-Phase-1 behavior) and <c>presetAdditive</c> is the preset-level contribution (preset local
-        /// zone override, else preset global zone, else <b>0</b>). The preset side's default is always 0,
-        /// never the generator's musical default (<paramref name="instrumentDefault"/>) — an absent
-        /// preset-level generator must contribute nothing, or the default would be double-counted on top
-        /// of the instrument-level effective value that already resolved it.
-        /// <para>
-        /// Invariant (regression guard): for a generator absent at the preset level (the common case —
-        /// most presets carry no preset-zone value generators), <c>EffectiveValue == instrumentEffective</c>
-        /// byte-for-byte, so routing a generator through this combiner for the first time cannot change any
-        /// render that doesn't actually use a preset-level generator.
-        /// </para>
-        /// <para>
-        /// Applicability: only "value" generators route through here. The following remain
-        /// instrument-only and must keep calling <see cref="GetEffectiveInt16"/>/<see cref="GetEffectiveRaw"/>
-        /// directly, never this method: sample address offsets (StartAddressOffset/EndAddressOffset/
-        /// StartLoopAddressOffset/EndLoopAddressOffset/StartAddressCoarseOffset/EndAddressCoarseOffset/
-        /// StartLoopAddressCoarseOffset/EndLoopAddressCoarseOffset), KeyNumber(46), Velocity(47),
-        /// SampleModes(54), ExclusiveClass(57), OverridingRootKey(58), SampleID(53), Instrument(41).
-        /// KeyRange(43)/VelocityRange(44) are zone-selection generators handled by
-        /// <see cref="ZoneCoversNote"/> and are never summed at all.
-        /// </para>
+        /// General preset-generator routing combiner: the effective value of a "value" generator is
+        /// <c>instrumentEffective + presetAdditive</c>, where <c>instrumentEffective</c> is the ordinary
+        /// instrument-level resolution (local zone, else instrument global zone, else
+        /// <paramref name="instrumentDefault"/>) and <c>presetAdditive</c> is the preset-level contribution
+        /// (preset local zone, else preset global zone, else <b>0</b> — never the generator's musical
+        /// default, or an absent preset generator would double-count it). Only "value" generators route
+        /// through here; address offsets, KeyNumber/Velocity/SampleModes/ExclusiveClass/OverridingRootKey/
+        /// SampleID/Instrument stay instrument-only via <see cref="GetEffectiveInt16"/>/
+        /// <see cref="GetEffectiveRaw"/>, and KeyRange/VelocityRange are handled by
+        /// <see cref="ZoneCoversNote"/> instead.
         /// </summary>
         static int EffectiveValue(
             Sf2Zone zone, Sf2Zone? globalZone,
@@ -427,24 +376,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
         /// <summary>
         /// Converts a centibel InitialAttenuation(48) amount to linear gain using the SF2 2.04 §8.1.3
-        /// conversion pre-scaled by <see cref="EmuAttenuationScale"/> — <c>10^(-EmuAttenuationScale*cB/200)</c>
-        /// — clamped to [0, <see cref="MaxSustainAttenuationCentibels"/>] cB. A prior revision of this fix
-        /// (task #7269) shipped this same 0.4 scale, then a later revision (task #7282, PR #31) reverted
-        /// it to the literal (unscaled) formula on the premise that FluidSynth applies gen-48 literally
-        /// (#7281) and that the zone/layer stacking landing alongside it (#7282) would supply the missing
-        /// presence instead. <b>That premise was empirically wrong</b>: the per-voice gain audit in
-        /// #7305 renders single sustained notes through FluidSynth 2.5.7 and fits the observed
-        /// attenuation-vs-gen-48 slope directly — effective scale = 0.412, not 1.0 — and confirms it
-        /// independently by showing a 0.4x-scaled render collapses three single-zone presets (gen-48 =
-        /// 0/80/150 cB) from an 8.8 dB spread down to 0.4 dB. So the EMU ~0.4 scaling is not a hack that
-        /// stacking should have obsoleted; it is FluidSynth's actual behavior for this generator. This
-        /// restores the #7269 constant with #7305's empirical citation. Zone/layer stacking
-        /// (<see cref="ResolveAll"/>, #7282) is CORRECT and unrelated — FluidSynth stacks companion
-        /// zones too — the two fixes compose (0.4 scale per voice, all covering voices stacked), they do
-        /// not substitute for each other. DO NOT revert this constant back to literal without
-        /// re-litigating #7305. Used ONLY for InitialAttenuation(48); the volume envelope's sustain level
-        /// (gen-37) has always used the unscaled <see cref="CentibelsToLinear"/> and is untouched by any
-        /// of this.
+        /// conversion pre-scaled by <see cref="EmuAttenuationScale"/>, clamped to
+        /// [0, <see cref="MaxSustainAttenuationCentibels"/>] cB. Used only for gen-48; the volume
+        /// envelope's sustain level (gen-37) uses the unscaled <see cref="CentibelsToLinear"/> instead, and
+        /// zone/layer stacking (<see cref="ResolveAll"/>) is orthogonal — both apply together.
         /// </summary>
         static float AttenuationCentibelsToLinear(int centibels) {
             if (centibels <= 0)
@@ -484,10 +419,9 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Reads generator 15 (chorusEffectsSend) via the general <see cref="EffectiveValue"/> combiner in
-        /// 0.1%-units (0..1000 → 0..1); absent at both levels defaults to the SF2 spec's literal generator
-        /// default of 0 — an absent gen-15 contributes no additive bias, so the channel's CC93 send still
-        /// drives the voice on its own (additive/clamped combination, design #7190 §8).
+        /// Reads generator 15 (chorusEffectsSend) via <see cref="EffectiveValue"/> in 0.1%-units
+        /// (0..1000 → 0..1); absent at both levels defaults to 0, so the channel's CC93 send alone drives
+        /// the voice.
         /// </summary>
         static float BuildChorusSend(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
             int raw = EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ChorusEffectsSend, instrumentDefault: 0);
@@ -499,12 +433,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Builds the static filter descriptor from gen-8 (cutoff) + gen-9 (Q), each combined via the
-        /// general <see cref="EffectiveValue"/> preset-routing combiner (DiVoid #7327 §8.1) so a
-        /// preset-level filter generator (e.g. Ocarina's preset-global InitialFilterQ) now reaches the
-        /// region instead of being silently dropped. gen-11 (ModulationEnvelopeToFilterCutoffFrequency) is
-        /// intentionally NOT read here — routing it requires the Phase-2 modulation envelope (DiVoid
-        /// #7327 §9.2); Phase 1 is routing-only and does not add new generator consumption.
+        /// Builds the static filter descriptor from gen-8 (cutoff) and gen-9 (Q), each combined via
+        /// <see cref="EffectiveValue"/> so a preset-level filter generator reaches the region.
+        /// gen-11 (ModulationEnvelopeToFilterCutoffFrequency) is not read here; it requires the
+        /// modulation envelope, not yet implemented.
         /// </summary>
         static FilterParameters BuildFilterParameters(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
             int cutoffCents = EffectiveValue(
@@ -601,13 +533,9 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
         /// <summary>
         /// Converts a centibel attenuation amount to linear gain using the literal SF2 2.04 §8.1.3
-        /// conversion (<c>10^(-cB/200)</c>), clamped to the SF2 valid attenuation range
-        /// [0, <see cref="MaxSustainAttenuationCentibels"/>] cB — a negative amount is clamped up to 0 cB
-        /// (full gain, 1.0) and an amount at or beyond the max is clamped down to silence (0.0). Used ONLY
-        /// for the volume envelope's sustain level (gen-37); InitialAttenuation(48) uses its own named
-        /// <see cref="AttenuationCentibelsToLinear"/> instead — numerically identical today, but kept as a
-        /// separate method so gen-48 and gen-37 can diverge independently in future without entangling
-        /// each other (DiVoid #7282 §8.4; do not collapse them back into one helper).
+        /// conversion (<c>10^(-cB/200)</c>), clamped to [0, <see cref="MaxSustainAttenuationCentibels"/>] cB.
+        /// Used only for the volume envelope's sustain level (gen-37); InitialAttenuation(48) uses its own
+        /// <see cref="AttenuationCentibelsToLinear"/> so the two can diverge independently.
         /// </summary>
         static float CentibelsToLinear(int centibels) {
             if (centibels <= 0)
