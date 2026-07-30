@@ -51,10 +51,6 @@ namespace Pooshit.AudioSynth.Tests {
             new[] { Zone(Gen(Sf2GeneratorType.Instrument, (ushort)instrIndex),
                          Gen(type, unchecked((ushort)amount))) };
 
-        static Sf2Zone[] PresetGlobalAndLocalZone(Sf2GeneratorType globalType, short globalAmount, int instrIndex) =>
-            new[] { Zone(Gen(globalType, unchecked((ushort)globalAmount))),
-                    Zone(Gen(Sf2GeneratorType.Instrument, (ushort)instrIndex)) };
-
         static Sf2Zone InstrumentZone(int keyLo, int keyHi, params Sf2Generator[] extras) {
             ushort keyRangeAmount = (ushort)(keyLo | (keyHi << 8));
             Sf2Generator keyRange = Gen(Sf2GeneratorType.KeyRange, keyRangeAmount);
@@ -1134,22 +1130,23 @@ namespace Pooshit.AudioSynth.Tests {
 
         [Test]
         [Description("A preset-level InitialFilterQ(9) generator (Ocarina's actual shape: preset-global " +
-                     "filter resonance) additively raises the combined resonance above the instrument-only " +
-                     "value -- the general combiner threading into BuildFilterParameters.")]
+                     "filter resonance, no instrument-level contribution) additively raises the combined " +
+                     "resonance to the exact expected value -- the general combiner threading into " +
+                     "BuildFilterParameters. QA review #7331 computed 10^(9/20)*0.707 = 1.993 for this " +
+                     "case; asserting the precise number (not just Is.GreaterThan) locks the resonance " +
+                     "conversion, not merely its direction.")]
         public void TryResolve_PresetLevelFilterQGenerator_AddsAdditivelyToInstrumentResonance() {
-            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndGenerator(0, Sf2GeneratorType.InitialFilterQ, amount: 50);
-            Sf2Zone instrumentZoneWithPreset = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialFilterQ, 50));
-            Sf2Zone instrumentZoneAlone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialFilterQ, 50));
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndGenerator(0, Sf2GeneratorType.InitialFilterQ, amount: 90);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127);
 
-            (Sf2RegionResolver combinedResolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZoneWithPreset });
-            (Sf2RegionResolver instrumentOnlyResolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { instrumentZoneAlone });
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
 
-            AssertResolved(combinedResolver, out SampleRegion? combinedRegion);
-            AssertResolved(instrumentOnlyResolver, out SampleRegion? instrumentOnlyRegion);
+            AssertResolved(resolver, out SampleRegion? region);
 
-            Assert.That(combinedRegion!.Filter.Resonance, Is.GreaterThan(instrumentOnlyRegion!.Filter.Resonance),
-                "preset-level InitialFilterQ=50 cB stacked on top of instrument-level 50 cB (total 100 cB) " +
-                "must raise resonance above the instrument-only (50 cB) case.");
+            Assert.That(region!.Filter.Resonance, Is.EqualTo(1.993f).Within(0.001f),
+                "preset-global InitialFilterQ=90 cB with no instrument-level contribution must resolve to " +
+                "exactly 10^(9/20)*0.707 ~= 1.993 (DiVoid #7331), not merely 'greater than' the flat " +
+                "Butterworth baseline.");
         }
 
         static void AssertResolved(Sf2RegionResolver resolver, out SampleRegion? region) {
@@ -1233,6 +1230,27 @@ namespace Pooshit.AudioSynth.Tests {
                 "80 cB (instrument-only) must map to 10^(-0.4*80/200), not a doubled or halved scale.");
             Assert.That(region150!.InitialAttenuationGain, Is.EqualTo(AttenuationGain(150)).Within(0.005f),
                 "150 cB (instrument-only) must map to 10^(-0.4*150/200), not a doubled or halved scale.");
+        }
+
+        [Test]
+        [Description("Clamp-after-sum boundary (QA review #7331 insight): instrument-level Pan(17) plus " +
+                     "preset-level Pan(17) sums past the +500 SF2-spec ceiling before normalisation -- the " +
+                     "additive combiner must clamp the SUMMED raw value, not just each side individually, " +
+                     "so the resolved Pan lands exactly at the clamped +1.0 instead of overflowing past it. " +
+                     "Hardens the newly-reachable additive-then-clamp path before Phase 2 stacks dynamic " +
+                     "values on top.")]
+        public void TryResolve_PresetAndInstrumentPan_SumBeyondClampCeiling_IsClampedAfterSum() {
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndGenerator(0, Sf2GeneratorType.Pan, amount: 400);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.Pan, 400));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(1f).Within(1e-6f),
+                "instrument Pan=400 + preset Pan=400 = 800 raw, well past the +500 SF2-spec ceiling; the " +
+                "additive sum must clamp to +500 before normalising, yielding exactly +1.0, not an " +
+                "out-of-range overflow.");
         }
     }
 }
