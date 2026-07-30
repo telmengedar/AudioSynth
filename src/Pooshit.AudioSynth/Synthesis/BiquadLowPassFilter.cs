@@ -3,21 +3,10 @@ using System;
 namespace Pooshit.AudioSynth.Synthesis {
 
     /// <summary>
-    /// Per-voice resonant low-pass filter: a single RBJ Audio-EQ-Cookbook low-pass biquad section in
-    /// Transposed Direct Form II, whose coefficients are computed at note start from a
-    /// <see cref="FilterParameters"/> descriptor and the output sample rate, then applied one sample at a
-    /// time.  <see cref="SetCutoff"/> lets a caller re-target the cutoff later in the note (filter-sweep),
-    /// recomputing coefficients while preserving filter state so the sweep is click-free.  It is a mutable
-    /// struct advanced in place, like <see cref="AmplitudeEnvelope"/> and <see cref="GainRamp"/>; copying
-    /// it by value loses the in-flight filter state.  <see cref="Process"/> is a single-sample multiply-add
-    /// step, so block size is never an input (INV-1); coefficient recomputation is driven only at the
-    /// caller's control rate, so the per-sample hot path stays allocation- and transcendental-free.  An
-    /// open cutoff is realised as an exact passthrough, and cutoff and resonance are clamped so the
-    /// coefficients are always finite and the section never itself produces NaN or infinity (INV-2
-    /// support; <see cref="Synthesizer"/> remains the final choke point).  The b-coefficients carry a
-    /// <c>1/√Q</c> passband-gain compensation (source-confirmed against FluidSynth 2.5.7
-    /// <c>fluid_iir_filter_impl.cpp</c>'s <c>GAIN_NORM</c> path), matching FluidSynth's reduced passband
-    /// gain as resonance rises; the RBJ formulas alone give unity passband gain regardless of Q.
+    /// Per-voice resonant low-pass filter: an RBJ Audio-EQ-Cookbook biquad in Transposed Direct Form II,
+    /// coefficients computed from a <see cref="FilterParameters"/> descriptor and re-targetable via
+    /// <see cref="SetCutoff"/> without a click. B-coefficients carry a <c>1/√Q</c> passband-gain
+    /// compensation, source-confirmed against FluidSynth 2.5.7's <c>fluid_iir_filter_impl.cpp</c>.
     /// </summary>
     public struct BiquadLowPassFilter {
 

@@ -6,13 +6,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
     /// <summary>
     /// Resolves a MIDI (key, velocity) pair through the SF2 two-level zone model to a
-    /// <see cref="SampleRegion"/> (<see cref="TryResolve"/>, single first-covering-zone match) or to every
-    /// covering zone at once (<see cref="ResolveAll"/>, the full preset-zone × instrument-zone cartesian
-    /// for zone/layer stacking). Every "value" generator (filter, LFO, pan, sends, tuning, envelope
-    /// times/sustain, InitialAttenuation) resolves as instrument-effective + preset-additive via
-    /// <see cref="EffectiveValue"/>. Also builds the modulation-envelope descriptor (gens 25-32) and routes
-    /// gen-11 (mod-envelope-to-filter-cutoff) into <see cref="FilterParameters.ModEnvToCutoffCents"/>.
-    /// Resolution never throws on the note path; a structurally-invalid zone degrades to no-match instead.
+    /// <see cref="SampleRegion"/> (<see cref="TryResolve"/>) or every covering zone at once
+    /// (<see cref="ResolveAll"/>, for zone/layer stacking). Builds filter, LFO, and modulation-envelope
+    /// descriptors via the general instrument-effective + preset-additive <see cref="EffectiveValue"/> combiner.
+    /// Never throws on the note path; an invalid zone degrades to no-match.
     /// </summary>
     public sealed class Sf2RegionResolver {
 

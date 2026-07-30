@@ -3,17 +3,13 @@ using System;
 namespace Pooshit.AudioSynth.Synthesis {
 
     /// <summary>
-    /// Immutable, rate-independent description of a resonant low-pass filter: the cutoff frequency in
-    /// hertz, the resonance as a linear quality factor (Q), and the modulation-envelope-to-cutoff depth
-    /// in cents (SF2 gen-11) that a voice combines with its live modulation-envelope value every control
-    /// tick. <see cref="BaseCutoffCents"/> exposes the same cutoff in the absolute-cents domain so a
-    /// voice can combine base, LFO, and mod-env cutoff contributions additively before a single Hz
-    /// conversion; the base cutoff is never collapsed to an open decision here — that decision is made
-    /// per control tick on the effective (combined) cutoff by <see cref="BiquadLowPassFilter"/>.
+    /// Immutable, rate-independent description of a resonant low-pass filter: cutoff in hertz, resonance
+    /// as a linear Q, and the modulation-envelope-to-cutoff depth in cents (SF2 gen-11).
+    /// <see cref="BaseCutoffCents"/> exposes the same cutoff in the cents domain for additive combination
+    /// with LFO and mod-envelope contributions.
     /// </summary>
     public readonly struct FilterParameters {
 
-        /// <summary>Reference frequency (Hz) for SF2 absolute-cents conversion: 8.176 Hz = MIDI note 0.</summary>
         const float ReferenceHz = 8.176f;
 
         /// <summary>
@@ -50,10 +46,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// </summary>
         public float BaseCutoffCents => 1200f * (float)Math.Log(CutoffHz / ReferenceHz, 2.0);
 
-        /// <summary>
-        /// Converts an absolute-cents value to hertz via the SF2 reference formula
-        /// (<see cref="ReferenceHz"/> · 2^(cents/1200)); the inverse of <see cref="BaseCutoffCents"/>.
-        /// </summary>
+        /// <summary>Converts absolute cents to hertz (8.176 Hz reference); the inverse of <see cref="BaseCutoffCents"/>.</summary>
         public static float CentsToHz(float cents) => (float)(ReferenceHz * Math.Pow(2.0, cents / 1200.0));
 
         /// <summary>

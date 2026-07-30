@@ -3,15 +3,10 @@ using System;
 namespace Pooshit.AudioSynth.Synthesis {
 
     /// <summary>
-    /// Control-rate DADSR modulation envelope: advances in caller-supplied frame batches (one call per
-    /// control tick, mirroring <see cref="ModulationLfo.Advance"/>) through delay, attack, hold, decay,
-    /// sustain and release, producing a unipolar value in [0, 1]. Unlike <see cref="AmplitudeEnvelope"/>,
-    /// decay and release ramp <b>linearly</b> in the value domain (design §9.1): the output already feeds
-    /// a log-frequency (cents) domain via <see cref="FilterParameters.ModEnvToCutoffCents"/>, so a linear
-    /// value ramp gives the musically-correct linear-in-cents cutoff sweep. It is a mutable struct
-    /// advanced in place, like <see cref="AmplitudeEnvelope"/>; copying it by value loses the in-flight
-    /// stage state. Gen-7 (mod-env-to-pitch) is not wired to this envelope's output; that is a deferred
-    /// fast-follow, left as a clean seam (the caller already has the per-tick value available).
+    /// Control-rate DADSR modulation envelope: advances in per-tick frame batches through delay, attack,
+    /// hold, decay, sustain and release, producing a unipolar value in [0, 1]. Unlike
+    /// <see cref="AmplitudeEnvelope"/>, decay and release ramp linearly (not geometrically), matching the
+    /// log-frequency (cents) domain its value feeds via <see cref="FilterParameters.ModEnvToCutoffCents"/>.
     /// </summary>
     public struct ModulationEnvelope {
 
@@ -139,11 +134,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             return level;
         }
 
-        /// <summary>
-        /// Enters the release stage from the current level, ramping linearly to zero; a note released
-        /// mid-attack or mid-decay fades from wherever it was rather than jumping. Has no effect once
-        /// already releasing or finished.
-        /// </summary>
+        /// <summary>Enters the release stage from the current level, ramping linearly to zero; a no-op once already releasing or finished.</summary>
         public void Release() {
             if (stage == EnvelopeStage.Release || stage == EnvelopeStage.Finished)
                 return;

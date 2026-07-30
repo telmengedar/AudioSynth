@@ -3,32 +3,11 @@ using System;
 namespace Pooshit.AudioSynth.Synthesis.Voices {
 
     /// <summary>
-    /// <see cref="IVoice"/> that reads a mono <see cref="SampleRegion"/> at a pitch-derived increment
-    /// with linear interpolation and renders a mono block.  Each interpolated sample passes through the
-    /// region's resonant <see cref="BiquadLowPassFilter"/> (the timbre-shaping stage) before being scaled
-    /// by the product of the region's DAHDSR <see cref="AmplitudeEnvelope"/> (the note's amplitude
-    /// contour, which owns the click-free onset and the note-off release fade) and a <see cref="GainRamp"/>
-    /// (the zipper-free slew of the velocity-derived scalar gain).  The filter sits before the amplifier,
-    /// realising the SF2 signal chain oscillator → low-pass filter → amplifier.  Supports no-loop one-shot
-    /// and continuous looping.  The region's <see cref="ModulationLfo"/> re-evaluates every
-    /// <see cref="ControlRateFrames"/> frames and steps the read-position increment's slope (vibrato);
-    /// held-then-stepped is exactly how the increment already behaved before the LFO, so a tick never
-    /// introduces an amplitude discontinuity (INV-1 by construction) and zero pitch depth reproduces the
-    /// pre-LFO increment bit-for-bit.  Tremolo (LFO to volume) glides its multiplier linearly across each
-    /// control block, since a stepped gain multiplier would itself be an audible click; filter cutoff
-    /// combines the region's base cutoff, the LFO's filter-sweep depth, and the mod-envelope's gen-11
-    /// depth additively in the cents domain every control tick, converts once to hertz, and re-targets the
-    /// biquad via <see cref="BiquadLowPassFilter.SetCutoff"/> (skipped when the effective cutoff has not
-    /// moved beyond <see cref="CutoffEpsilonCents"/>, so a static filter recomputes coefficients only once).
-    /// The open-vs-filtered decision is therefore made on the live effective cutoff every tick, never frozen
-    /// at note-on. Zero LFO depth and zero gen-11 depth reproduce the pre-feature render bit-for-bit.
-    /// <see cref="SetPitchBend"/> folds a channel-driven pitch-bend ratio into the same control-tick
-    /// increment recompute; a centered bend (1.0) reproduces the pre-bend increment bit-for-bit.
-    /// <see cref="SetModWheel"/> drives a second, dedicated <see cref="ModulationLfo"/> — independent of
-    /// the region's own LFO and its bypass — whose output is scaled by <see cref="MaxModWheelVibratoCents"/>
-    /// and the live mod-wheel amount and folded into the same control-tick increment recompute; the
-    /// mod-wheel LFO advances only while the amount is non-zero, so a channel that never sends CC1
-    /// reproduces the pre-mod-wheel increment bit-for-bit.
+    /// <see cref="IVoice"/> that reads a mono <see cref="SampleRegion"/> at a pitch-derived increment with
+    /// linear interpolation and renders a mono block, applying the region's <see cref="BiquadLowPassFilter"/>
+    /// then its <see cref="AmplitudeEnvelope"/> and a <see cref="GainRamp"/>. Each control tick recomputes
+    /// pitch (LFO, pitch-bend, mod-wheel) and the effective filter cutoff (base + LFO + mod-envelope,
+    /// combined in cents); zero depth on every routing reproduces the pre-feature render bit-for-bit.
     /// </summary>
     public sealed class SamplePlaybackVoice : IVoice {
 
@@ -40,10 +19,6 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         /// </summary>
         const float MaxModWheelVibratoCents = 50f;
 
-        /// <summary>
-        /// Minimum cutoff change, in cents, that triggers a biquad coefficient recompute at a control
-        /// tick; below this the shift is inaudible, so a steady-state note skips the recompute's trig cost.
-        /// </summary>
         const float CutoffEpsilonCents = 0.5f;
 
         readonly SampleRegion region;

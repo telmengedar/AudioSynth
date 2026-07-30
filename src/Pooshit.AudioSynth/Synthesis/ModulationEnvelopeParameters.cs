@@ -1,11 +1,8 @@
 namespace Pooshit.AudioSynth.Synthesis {
 
     /// <summary>
-    /// Immutable, rate-independent description of a DADSR modulation envelope: the delay, attack, hold,
-    /// decay and release stage durations in seconds, and the sustain level as a unipolar linear value in
-    /// [0, 1]. Structurally mirrors <see cref="EnvelopeParameters"/>, but drives <see cref="ModulationEnvelope"/>
-    /// (SF2 gens 25-30), a sibling of the volume envelope that routes into filter cutoff (gen-11) rather
-    /// than amplitude; its decay and release ramp linearly in the value domain, not geometrically.
+    /// Immutable DADSR description (delay/attack/hold/decay/release seconds, unipolar [0,1] sustain) for
+    /// <see cref="ModulationEnvelope"/>; mirrors <see cref="EnvelopeParameters"/>'s shape.
     /// </summary>
     public readonly struct ModulationEnvelopeParameters {
 
@@ -51,12 +48,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <summary>Time in seconds to fall linearly from the current level to zero after note-off.</summary>
         public float ReleaseSeconds { get; }
 
-        /// <summary>
-        /// The SF2-specification default modulation envelope: near-instant stage times (≈0.977 ms, from
-        /// −12000 timecents) and a full sustain level (1). Used wherever a region carries no mod-envelope
-        /// generators; harmless on its own since a zero <see cref="FilterParameters.ModEnvToCutoffCents"/>
-        /// makes the envelope's shape irrelevant to the render.
-        /// </summary>
+        /// <summary>Near-instant default stage times (~0.977 ms) with full (1) sustain; used when no mod-envelope generators are present.</summary>
         public static ModulationEnvelopeParameters Default =>
             new ModulationEnvelopeParameters(
                 Sf2DefaultTimeSeconds, Sf2DefaultTimeSeconds, Sf2DefaultTimeSeconds, Sf2DefaultTimeSeconds, 1f, Sf2DefaultTimeSeconds);

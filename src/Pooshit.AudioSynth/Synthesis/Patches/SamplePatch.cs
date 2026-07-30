@@ -4,23 +4,18 @@ using Pooshit.AudioSynth.Synthesis.Voices;
 namespace Pooshit.AudioSynth.Synthesis.Patches {
 
     /// <summary>
-    /// <see cref="IPatch"/> that plays a fixed mono <see cref="SampleRegion"/>; <see cref="StartVoice"/>
-    /// computes the pitch increment for the played key, a concave <c>(velocity/127)²</c>
-    /// velocity-to-gain mapping (<see cref="VelocityToGain"/>) scaled by the region's static
-    /// <see cref="SampleRegion.InitialAttenuationGain"/> (SF2 generator 48), resolves the key/velocity-
-    /// dependent filter and modulation-envelope values the cached (key/velocity-independent) region cannot
-    /// carry — the velocity-to-filter-cutoff offset (SF2 §8.4.2) and the keynum-adjusted mod-envelope
-    /// hold/decay (gens 31/32) — then constructs a <see cref="SamplePlaybackVoice"/> ready to render.
+    /// <see cref="IPatch"/> that plays a fixed mono <see cref="SampleRegion"/>: <see cref="StartVoice"/>
+    /// computes the pitch increment and concave velocity-to-gain (<see cref="VelocityToGain"/>), resolves
+    /// the per-note velocity-to-filter-cutoff offset and keynum-adjusted mod-envelope hold/decay, then
+    /// constructs a <see cref="SamplePlaybackVoice"/> ready to render.
     /// </summary>
     public sealed class SamplePatch : IPatch {
 
         /// <summary>Full-scale value for a 7-bit MIDI velocity.</summary>
         const float VelocityFullScale = 127f;
 
-        /// <summary>SF2 §8.4.2 default velocity-to-filter-cutoff modulator range, in cents.</summary>
         const float VelocityFilterCutoffRangeCents = -2400f;
 
-        /// <summary>Envelope-time ceiling matching <see cref="Formats.Sf2.Sf2RegionResolver"/>'s.</summary>
         const float MaxEnvelopeSeconds = 20f;
 
         readonly SampleRegion region;
