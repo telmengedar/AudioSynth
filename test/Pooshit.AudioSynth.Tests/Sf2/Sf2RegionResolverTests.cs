@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using NUnit.Framework;
 using Pooshit.AudioSynth.Formats.Sf2;
 using Pooshit.AudioSynth.Synthesis;
@@ -918,24 +919,24 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
-        [Description("InitialAttenuation(48)=60 cB at the instrument level maps to a linear gain of ~0.759 " +
-                     "under the EMU 0.4 scaling (10^(-0.4*60/200) = 10^(-60/500) ≈ 0.759; DiVoid #7273 — " +
-                     "NOT the spec-literal 10^(-60/200)=0.5, which over-attenuates against the EMU8k/10k " +
-                     "convention every soundfont, including OmegaGMGS2, is authored against).")]
-        public void TryResolve_InstrumentAttenuation60Centibels_MapsToEmuScaledGain() {
+        [Description("InitialAttenuation(48)=60 cB at the instrument level maps to a linear gain of ~0.501 " +
+                     "under the spec-literal SF2 2.04 §8.1.3 conversion (10^(-60/200) ≈ 0.501; DiVoid #7281/" +
+                     "#7282 — reverting the EMU-8k-scaled #7273 conversion now that zone/layer stacking " +
+                     "(#7282) supplies melodic presence via companion zones instead of an attenuation hack).")]
+        public void TryResolve_InstrumentAttenuation60Centibels_MapsToLiteralGain() {
             Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
 
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.759f).Within(0.005f),
-                "60 cB of attenuation must map to 10^(-0.4*60/200) ≈ 0.759 under the EMU scaling.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.501f).Within(0.005f),
+                "60 cB of attenuation must map to 10^(-60/200) ≈ 0.501 under the literal SF2 conversion.");
         }
 
         [Test]
-        [Description("InitialAttenuation(48)=100 cB at the instrument level maps to a linear gain of ~0.631 " +
-                     "under the EMU 0.4 scaling (10^(-0.4*100/200) = 10^(-100/500) ≈ 0.631; DiVoid #7273).")]
+        [Description("InitialAttenuation(48)=100 cB at the instrument level maps to a linear gain of ~0.316 " +
+                     "under the spec-literal SF2 2.04 §8.1.3 conversion (10^(-100/200) ≈ 0.316; DiVoid #7281/#7282).")]
         public void TryResolve_InstrumentAttenuation100Centibels_MapsToExpectedGain() {
             Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 100));
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
@@ -943,15 +944,14 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.631f).Within(0.005f),
-                "100 cB (10 dB specified) of attenuation must map to 10^(-0.4*100/200) ≈ 0.631 under the EMU scaling.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.316f).Within(0.005f),
+                "100 cB (10 dB specified) of attenuation must map to 10^(-100/200) ≈ 0.316 under the literal conversion.");
         }
 
         [Test]
         [Description("Preset-zone InitialAttenuation(48) and instrument-zone InitialAttenuation(48) accumulate " +
                      "additively (SF2 §8.1.2), not by override: preset=40 cB + instrument=60 cB sums to 100 cB, " +
-                     "then the EMU 0.4 scale is applied to the total (summing-then-scaling is exact: " +
-                     "0.4*(40+60) = 0.4*40 + 0.4*60).")]
+                     "then the literal SF2 conversion is applied to the total.")]
         public void TryResolve_PresetAndInstrumentAttenuation_AccumulateAdditively() {
             Sf2Zone[] presetZones = PresetZoneWithInstrumentAndAttenuation(0, attenuationCentibels: 40);
             Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
@@ -960,9 +960,9 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.631f).Within(0.005f),
-                "preset(40 cB) + instrument(60 cB) = 100 cB must map to 10^(-0.4*100/200) ≈ 0.631, " +
-                "proving additive (not override) accumulation across the two zone levels under the EMU scaling.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.316f).Within(0.005f),
+                "preset(40 cB) + instrument(60 cB) = 100 cB must map to 10^(-100/200) ≈ 0.316, " +
+                "proving additive (not override) accumulation across the two zone levels under the literal conversion.");
         }
 
         [Test]
@@ -996,7 +996,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Local instrument-zone InitialAttenuation(48) overrides the global instrument zone's " +
                      "value (local-over-global precedence, same as every other generator); resulting 60 cB " +
-                     "maps through the EMU 0.4 scaling to ~0.759 (DiVoid #7273).")]
+                     "maps through the literal SF2 conversion to ~0.501 (DiVoid #7281/#7282).")]
         public void TryResolve_LocalInstrumentAttenuationOverridesGlobal() {
             Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.InitialAttenuation, 200));
             Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
@@ -1007,9 +1007,67 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.759f).Within(0.005f),
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.501f).Within(0.005f),
                 "local InitialAttenuation=60 cB must override the global instrument zone's 200 cB, and map " +
-                "through the EMU 0.4 scaling to 10^(-0.4*60/200) ≈ 0.759.");
+                "through the literal SF2 conversion to 10^(-60/200) ≈ 0.501.");
         }
+
+        [Test]
+        [Description("SF2 zone/layer stacking (DiVoid #7282 §8.1): two instrument zones with overlapping " +
+                     "KeyRange/VelocityRange both cover the same note, so ResolveAll must return BOTH as " +
+                     "separate layers -- the emit-all cartesian, not the single first-match TryResolve returns.")]
+        public void ResolveAll_TwoOverlappingInstrumentZones_ReturnsBothLayers() {
+            Sf2Zone tonalZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 177));
+            Sf2Zone companionZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 0));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { tonalZone, companionZone });
+
+            List<Sf2ResolvedLayer> results = new List<Sf2ResolvedLayer>();
+            int count = resolver.ResolveAll(60, 100, results);
+
+            Assert.That(count, Is.EqualTo(2),
+                "both overlapping instrument zones cover key 60/velocity 100 and must both be emitted as layers.");
+            Assert.That(results, Has.Count.EqualTo(2));
+            Assert.That(results[0].Region.InitialAttenuationGain, Is.EqualTo(AttenuationGain(177)).Within(0.005f),
+                "first layer (source order) must be the heavily-attenuated tonal zone.");
+            Assert.That(results[1].Region.InitialAttenuationGain, Is.EqualTo(1f).Within(0.005f),
+                "second layer (source order) must be the near-0-cB companion zone.");
+        }
+
+        [Test]
+        [Description("SF2 zone/layer stacking (DiVoid #7282 §8.1): non-overlapping velocity-range zones are " +
+                     "a SELECTION, not a stack -- only the zone whose VelocityRange covers the played " +
+                     "velocity must be returned, exactly one layer.")]
+        public void ResolveAll_NonOverlappingVelocitySplit_ReturnsExactlyOneLayer() {
+            Sf2Zone softZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.VelocityRange, (ushort)(0 | (63 << 8))));
+            Sf2Zone loudZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.VelocityRange, (ushort)(64 | (127 << 8))));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { softZone, loudZone });
+
+            List<Sf2ResolvedLayer> results = new List<Sf2ResolvedLayer>();
+            int count = resolver.ResolveAll(60, 100, results);
+
+            Assert.That(count, Is.EqualTo(1),
+                "velocity 100 falls only in the loud zone's [64,127] range; the soft zone's [0,63] must not match.");
+        }
+
+        [Test]
+        [Description("ResolveAll returns zero layers, appending nothing, when no zone covers the note " +
+                     "(mirrors TryResolve's false/no-match case).")]
+        public void ResolveAll_NoCoveringZone_ReturnsZeroLayers() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(80, 90) });
+
+            List<Sf2ResolvedLayer> results = new List<Sf2ResolvedLayer>();
+            int count = resolver.ResolveAll(60, 100, results);
+
+            Assert.That(count, Is.EqualTo(0));
+            Assert.That(results, Is.Empty);
+        }
+
+        static float AttenuationGain(int centibels) => (float)Math.Pow(10.0, -centibels / 200.0);
     }
 }

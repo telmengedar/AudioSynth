@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Pooshit.AudioSynth.Audio;
 
 namespace Pooshit.AudioSynth.Synthesis {
@@ -40,7 +41,16 @@ namespace Pooshit.AudioSynth.Synthesis {
     /// <see cref="IVoice.FastFadeForSteal"/> voice-stealing already ships; a voice with class 0 — every
     /// non-SF2 voice and every SF2 region without gen 57 — takes today's path unchanged, bit-for-bit. All
     /// buffers, including both effects' delay lines and send buses, are ctor-sized; steady-state
-    /// <see cref="Read"/> allocates nothing.
+    /// <see cref="Read"/> allocates nothing. Also implements SF2 zone/layer stacking (DiVoid #7282):
+    /// when a channel's patch is an <see cref="IMultiVoicePatch"/>, <see cref="NoteOn"/> starts every
+    /// layer the patch resolves and gives each its own pool slot, all sharing <c>(channel, key)</c> so
+    /// <see cref="NoteOff"/>/sustain/<see cref="SilenceChannel"/>/<see cref="ReleaseAllNotes"/> release
+    /// every layer together through this same unchanged per-slot machinery; a plain <see cref="IPatch"/>
+    /// (every non-SF2 patch, and every test/demo <see cref="IPatch"/> helper) takes today's single-voice
+    /// path completely unchanged. Layer placement is per-layer free-slot-else-steal with sibling
+    /// protection (a note's own already-placed layers are never cannibalised by its later layers), and
+    /// the gen-57 exclusive-class choke runs once after all of a note's layers are placed, excluding the
+    /// note's own siblings, so stacked layers never choke each other.
     /// </summary>
     public sealed class Synthesizer : ISynthesizer {
 
@@ -87,6 +97,8 @@ namespace Pooshit.AudioSynth.Synthesis {
         readonly Chorus? chorus;
         readonly bool perChannelReverb;
         readonly bool perChannelChorus;
+        readonly List<IVoice> layerVoiceBuffer;
+        readonly List<int> layerSlotBuffer;
         int nextAge;
 
         /// <summary>
@@ -130,6 +142,8 @@ namespace Pooshit.AudioSynth.Synthesis {
                 : null;
             perChannelChorus = chorus != null && !options.GlobalChorus;
             chorusSendBus = perChannelChorus ? new float[options.BlockFrames * options.Channels] : Array.Empty<float>();
+            layerVoiceBuffer = new List<IVoice>(4);
+            layerSlotBuffer = new List<int>(4);
         }
 
         /// <inheritdoc/>
@@ -222,6 +236,11 @@ namespace Pooshit.AudioSynth.Synthesis {
             if (channel < 0 || channel >= ChannelCount)
                 throw new ArgumentOutOfRangeException(nameof(channel), channel, $"channel must be in [0,{ChannelCount - 1}].");
 
+            if (channelPatch[channel] is IMultiVoicePatch multiVoicePatch) {
+                StartLayeredNote(multiVoicePatch, channel, key, velocity);
+                return;
+            }
+
             int freeSlot = FindFreeSlot();
             if (freeSlot >= 0) {
                 StartVoiceInSlot(freeSlot, channel, key, velocity);
@@ -237,6 +256,55 @@ namespace Pooshit.AudioSynth.Synthesis {
             slot.PendingChannel = channel;
             slot.PendingKey = key;
             slot.PendingVelocity = velocity;
+            slot.PendingVoice = null;
+        }
+
+        /// <summary>
+        /// SF2 zone/layer stacking onset (DiVoid #7282 §6.1/§6.2): resolves every layer
+        /// <paramref name="patch"/> wants for this note-on via <see cref="IMultiVoicePatch.StartVoices"/>
+        /// into the reusable <see cref="layerVoiceBuffer"/>, then places each layer in its own slot —
+        /// free-first, else steal the standard <c>(releasedTier, currentGain, age)</c> victim, excluding
+        /// this note's own already-placed/already-committed sibling slots (<see cref="layerSlotBuffer"/>)
+        /// from victim candidacy so a note can never cannibalise itself. A layer that finds neither a
+        /// free slot nor an eligible victim is dropped (partial, graceful stealing — earlier layers of
+        /// the same note keep sounding); this only happens when simultaneous layers across all in-flight
+        /// notes exceed the pool size, a pathological/exhaustion case, not ordinary operation. Once every
+        /// layer has been placed or dropped, the gen-57 exclusive-class choke runs exactly once,
+        /// excluding the whole sibling group (<see cref="ChokeSameClassVoicesForNote"/>), so stacked
+        /// layers of this note never choke each other.
+        /// </summary>
+        void StartLayeredNote(IMultiVoicePatch patch, int channel, int key, int velocity) {
+            layerVoiceBuffer.Clear();
+            patch.StartVoices(key, velocity, layerVoiceBuffer);
+            if (layerVoiceBuffer.Count == 0)
+                return;
+
+            layerSlotBuffer.Clear();
+
+            for (int i = 0; i < layerVoiceBuffer.Count; i++) {
+                IVoice voice = layerVoiceBuffer[i];
+
+                int freeSlot = FindFreeSlot();
+                if (freeSlot >= 0) {
+                    PlaceVoiceInSlot(freeSlot, channel, key, voice);
+                    layerSlotBuffer.Add(freeSlot);
+                    continue;
+                }
+
+                int victim = FindStealVictim(layerSlotBuffer);
+                if (victim < 0)
+                    continue;
+
+                ref VoiceSlot slot = ref pool[victim];
+                slot.Voice!.FastFadeForSteal();
+                slot.PendingChannel = channel;
+                slot.PendingKey = key;
+                slot.PendingVelocity = velocity;
+                slot.PendingVoice = voice;
+                layerSlotBuffer.Add(victim);
+            }
+
+            ChokeSameClassVoicesForNote(channel, layerSlotBuffer);
         }
 
         /// <inheritdoc/>
@@ -269,8 +337,14 @@ namespace Pooshit.AudioSynth.Synthesis {
                 if (slot.Channel == channel)
                     slot.Voice!.FastFadeForSteal();
 
-                if (slot.PendingChannel == channel)
+                if (slot.PendingChannel == channel) {
                     slot.PendingChannel = NoPendingNote;
+                    // Cancel a pre-built pending layer too (SF2 zone/layer stacking, DiVoid #7282): Read's
+                    // consumption check tests PendingVoice first, so leaving it non-null here would let a
+                    // cancelled layer resurrect after All Sound Off exactly like the PendingChannel bug
+                    // this method's cancellation already guards against.
+                    slot.PendingVoice = null;
+                }
             }
         }
 
@@ -312,6 +386,22 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// </summary>
         void StartVoiceInSlot(int slotIndex, int channel, int key, int velocity) {
             IVoice voice = channelPatch[channel].StartVoice(key, velocity);
+            PlaceVoiceInSlot(slotIndex, channel, key, voice);
+            ChokeSameClassVoices(slotIndex, channel, voice.ExclusiveClass);
+        }
+
+        /// <summary>
+        /// Places an already-constructed <paramref name="voice"/> into <paramref name="slotIndex"/>,
+        /// applying the channel's live pitch-bend and mod-wheel and stamping a fresh age — the shared
+        /// tail of both <see cref="StartVoiceInSlot"/> (which constructs the voice itself, immediately
+        /// before calling this) and SF2 zone/layer stacking's <see cref="StartLayeredNote"/> (which
+        /// constructs every layer's voice up front via <see cref="IMultiVoicePatch.StartVoices"/> and
+        /// places each one separately). Does NOT run the exclusive-class choke — callers choke
+        /// individually (<see cref="StartVoiceInSlot"/>) or once for the whole note
+        /// (<see cref="ChokeSameClassVoicesForNote"/>), never here, so a multi-layer note can defer
+        /// choking until every layer is placed.
+        /// </summary>
+        void PlaceVoiceInSlot(int slotIndex, int channel, int key, IVoice voice) {
             voice.SetPitchBend(channelBendFactor[channel]);
             voice.SetModWheel(channelModWheel[channel]);
             ref VoiceSlot slot = ref pool[slotIndex];
@@ -323,8 +413,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             slot.Released = false;
             slot.Age = nextAge++;
             slot.PendingChannel = NoPendingNote;
-
-            ChokeSameClassVoices(slotIndex, channel, voice.ExclusiveClass);
+            slot.PendingVoice = null;
         }
 
         /// <summary>
@@ -353,6 +442,51 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         /// <summary>
+        /// Sibling-aware exclusive-class choke for a note that started multiple layers in one
+        /// <see cref="StartLayeredNote"/> call (SF2 zone/layer stacking, DiVoid #7282 §9.2): for each
+        /// layer's slot in <paramref name="noteSlots"/> that carries a non-zero exclusive class, fast-fades
+        /// every OTHER occupied, non-draining, same-channel slot sharing that class — but never a slot in
+        /// <paramref name="noteSlots"/> itself, so stacked layers of this note never choke each other.
+        /// External same-class voices (e.g. a prior hi-hat hit) are still choked exactly as
+        /// <see cref="ChokeSameClassVoices"/> does for a single-voice note. A layer that was dropped under
+        /// steal exhaustion is simply absent from <paramref name="noteSlots"/> and neither triggers nor
+        /// receives a choke from this call.
+        /// </summary>
+        /// <remarks>
+        /// Scoped to THIS call's placements only: a layer parked behind a steal (<see cref="VoiceSlot.PendingVoice"/>)
+        /// that later starts sounding on its own, asynchronously, in <see cref="Read"/> is placed via the
+        /// ordinary <see cref="ChokeSameClassVoices"/> path and does not re-run this sibling exclusion —
+        /// an accepted, narrow limitation only reachable when the pool is already exhausted AND stacked
+        /// layers of one note share a non-zero exclusive class (DiVoid #7282 does not specify behaviour
+        /// for this compound edge case).
+        /// </remarks>
+        void ChokeSameClassVoicesForNote(int channel, List<int> noteSlots) {
+            for (int n = 0; n < noteSlots.Count; n++) {
+                int slotIndex = noteSlots[n];
+                ref VoiceSlot slot = ref pool[slotIndex];
+                int exclusiveClass = slot.IsOccupied
+                    ? slot.Voice!.ExclusiveClass
+                    : slot.PendingVoice?.ExclusiveClass ?? 0;
+
+                if (exclusiveClass == 0)
+                    continue;
+
+                for (int i = 0; i < pool.Length; i++) {
+                    if (noteSlots.Contains(i))
+                        continue;
+
+                    ref VoiceSlot other = ref pool[i];
+                    if (!other.IsOccupied || other.PendingChannel != NoPendingNote)
+                        continue;
+                    if (other.Channel != channel || other.Voice!.ExclusiveClass != exclusiveClass)
+                        continue;
+
+                    other.Voice.FastFadeForSteal();
+                }
+            }
+        }
+
+        /// <summary>
         /// Scans the occupied, non-draining slots for the best voice-stealing victim: the smallest
         /// lexicographic tuple <c>(releasedTier, currentGain, age)</c> — a released voice (immediate
         /// release or a sustain-deferred release) dies before any still-held voice; among voices tied on
@@ -361,7 +495,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// it. Returns -1 when every occupied slot is already draining (pathological: more note-ons than
         /// the pool has slots inside one render).
         /// </summary>
-        int FindStealVictim() {
+        /// <param name="excludedSlots">
+        /// optional pool indices to exclude from victim candidacy in addition to the standard pending-note
+        /// exclusion — used by SF2 zone/layer stacking (<see cref="StartLayeredNote"/>, DiVoid #7282 §9.1)
+        /// to protect a note's own already-placed sibling layers from being cannibalised by its later
+        /// layers. <c>null</c> (the default, used by every non-stacking call site) applies no extra exclusion.
+        /// </param>
+        int FindStealVictim(List<int>? excludedSlots = null) {
             int best = -1;
             int bestReleasedTier = 0;
             float bestGain = 0f;
@@ -370,6 +510,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             for (int i = 0; i < pool.Length; i++) {
                 ref VoiceSlot slot = ref pool[i];
                 if (!slot.IsOccupied || slot.PendingChannel != NoPendingNote)
+                    continue;
+                if (excludedSlots != null && excludedSlots.Contains(i))
                     continue;
 
                 int releasedTier = slot.Released || slot.PendingRelease ? 0 : 1;
@@ -489,9 +631,19 @@ namespace Pooshit.AudioSynth.Synthesis {
                     }
 
                     if (!slot.Voice.IsActive) {
-                        if (slot.PendingChannel != NoPendingNote)
+                        if (slot.PendingVoice != null) {
+                            // SF2 zone/layer stacking (DiVoid #7282 §6.2): this layer's voice was already
+                            // built up front by StartLayeredNote, so placement just needs the slot's
+                            // remembered channel/key -- no fresh IPatch.StartVoice call, and no risk of
+                            // re-resolving a different (wrong) layer.
+                            IVoice pendingVoice = slot.PendingVoice;
+                            int pendingChannel = slot.PendingChannel;
+                            int pendingKey = slot.PendingKey;
+                            PlaceVoiceInSlot(v, pendingChannel, pendingKey, pendingVoice);
+                            ChokeSameClassVoices(v, pendingChannel, pendingVoice.ExclusiveClass);
+                        } else if (slot.PendingChannel != NoPendingNote) {
                             StartVoiceInSlot(v, slot.PendingChannel, slot.PendingKey, slot.PendingVelocity);
-                        else {
+                        } else {
                             slot.IsOccupied = false;
                             slot.Voice = null;
                         }
