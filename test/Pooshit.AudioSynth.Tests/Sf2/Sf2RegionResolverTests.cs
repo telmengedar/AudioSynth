@@ -919,24 +919,24 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
-        [Description("InitialAttenuation(48)=60 cB at the instrument level maps to a linear gain of ~0.501 " +
-                     "under the spec-literal SF2 2.04 §8.1.3 conversion (10^(-60/200) ≈ 0.501; DiVoid #7281/" +
-                     "#7282 — reverting the EMU-8k-scaled #7273 conversion now that zone/layer stacking " +
-                     "(#7282) supplies melodic presence via companion zones instead of an attenuation hack).")]
-        public void TryResolve_InstrumentAttenuation60Centibels_MapsToLiteralGain() {
+        [Description("InitialAttenuation(48)=60 cB at the instrument level maps to a linear gain of ~0.759 " +
+                     "under the EMU-0.4-scaled conversion (10^(-0.4*60/200) ≈ 0.759; DiVoid #7305 restores " +
+                     "the 0.4 scale that #7282/PR #31 wrongly reverted to literal — the literal conversion " +
+                     "over-attenuates relative to FluidSynth's measured effective scale of 0.412).")]
+        public void TryResolve_InstrumentAttenuation60Centibels_MapsToEmuScaledGain() {
             Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
 
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.501f).Within(0.005f),
-                "60 cB of attenuation must map to 10^(-60/200) ≈ 0.501 under the literal SF2 conversion.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.759f).Within(0.005f),
+                "60 cB of attenuation must map to 10^(-0.4*60/200) ≈ 0.759 under the EMU-scaled conversion.");
         }
 
         [Test]
-        [Description("InitialAttenuation(48)=100 cB at the instrument level maps to a linear gain of ~0.316 " +
-                     "under the spec-literal SF2 2.04 §8.1.3 conversion (10^(-100/200) ≈ 0.316; DiVoid #7281/#7282).")]
+        [Description("InitialAttenuation(48)=100 cB at the instrument level maps to a linear gain of ~0.631 " +
+                     "under the EMU-0.4-scaled conversion (10^(-0.4*100/200) ≈ 0.631; DiVoid #7305).")]
         public void TryResolve_InstrumentAttenuation100Centibels_MapsToExpectedGain() {
             Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 100));
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
@@ -944,14 +944,14 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.316f).Within(0.005f),
-                "100 cB (10 dB specified) of attenuation must map to 10^(-100/200) ≈ 0.316 under the literal conversion.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.631f).Within(0.005f),
+                "100 cB (10 dB specified) of attenuation must map to 10^(-0.4*100/200) ≈ 0.631 under the EMU-scaled conversion.");
         }
 
         [Test]
         [Description("Preset-zone InitialAttenuation(48) and instrument-zone InitialAttenuation(48) accumulate " +
                      "additively (SF2 §8.1.2), not by override: preset=40 cB + instrument=60 cB sums to 100 cB, " +
-                     "then the literal SF2 conversion is applied to the total.")]
+                     "then the EMU-0.4-scaled conversion is applied to the total.")]
         public void TryResolve_PresetAndInstrumentAttenuation_AccumulateAdditively() {
             Sf2Zone[] presetZones = PresetZoneWithInstrumentAndAttenuation(0, attenuationCentibels: 40);
             Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
@@ -960,9 +960,9 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.316f).Within(0.005f),
-                "preset(40 cB) + instrument(60 cB) = 100 cB must map to 10^(-100/200) ≈ 0.316, " +
-                "proving additive (not override) accumulation across the two zone levels under the literal conversion.");
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.631f).Within(0.005f),
+                "preset(40 cB) + instrument(60 cB) = 100 cB must map to 10^(-0.4*100/200) ≈ 0.631, " +
+                "proving additive (not override) accumulation across the two zone levels under the EMU-scaled conversion.");
         }
 
         [Test]
@@ -996,7 +996,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("Local instrument-zone InitialAttenuation(48) overrides the global instrument zone's " +
                      "value (local-over-global precedence, same as every other generator); resulting 60 cB " +
-                     "maps through the literal SF2 conversion to ~0.501 (DiVoid #7281/#7282).")]
+                     "maps through the EMU-0.4-scaled conversion to ~0.759 (DiVoid #7305).")]
         public void TryResolve_LocalInstrumentAttenuationOverridesGlobal() {
             Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.InitialAttenuation, 200));
             Sf2Zone localZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
@@ -1007,9 +1007,9 @@ namespace Pooshit.AudioSynth.Tests {
             bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
 
             Assert.That(found, Is.True);
-            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.501f).Within(0.005f),
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.759f).Within(0.005f),
                 "local InitialAttenuation=60 cB must override the global instrument zone's 200 cB, and map " +
-                "through the literal SF2 conversion to 10^(-60/200) ≈ 0.501.");
+                "through the EMU-scaled conversion to 10^(-0.4*60/200) ≈ 0.759.");
         }
 
         [Test]
@@ -1068,6 +1068,8 @@ namespace Pooshit.AudioSynth.Tests {
             Assert.That(results, Is.Empty);
         }
 
-        static float AttenuationGain(int centibels) => (float)Math.Pow(10.0, -centibels / 200.0);
+        const double EmuAttenuationScale = 0.4;
+
+        static float AttenuationGain(int centibels) => (float)Math.Pow(10.0, -EmuAttenuationScale * centibels / 200.0);
     }
 }

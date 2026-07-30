@@ -22,6 +22,19 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const float MaxEnvelopeSeconds = 20f;
         const int MaxSustainAttenuationCentibels = 1440;
 
+        /// <summary>
+        /// EMU-10K1-hardware-derived scale applied to InitialAttenuation(48) only, restoring the
+        /// convention many GS-family SF2 fonts (e.g. OmegaGMGS2) are authored against. Empirically
+        /// measured against FluidSynth 2.5.7 single-note isolation renders: effective scale = 0.412
+        /// (linear-fit slope across gen-48 = 0/80/150 cB single-zone presets), independently confirmed
+        /// by the 0.4x-scaled render collapsing those same presets' spread from 8.8 dB to 0.4 dB
+        /// (DiVoid #7305). 0.4 sits well within the +/-2 dB target of the 0.412 optimum.
+        /// DO NOT remove/revert this constant without re-litigating #7305 (and the reverted history at
+        /// #7273/#7281/#7282 it corrects) — a prior revision of this file reverted an identical 0.4
+        /// scale on the (empirically wrong) premise that FluidSynth applies gen-48 literally.
+        /// </summary>
+        const double EmuAttenuationScale = 0.4;
+
         const int DefaultFilterCutoffCents = 13500;
         const int MinFilterCutoffCents = 1500;
         const int MaxFilterResonanceCentibels = 960;
@@ -358,9 +371,9 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// sums to 0 cB, which maps to a gain of 1.0, so the region's amplitude is unchanged from before
         /// this generator was read. Uses its own named conversion, kept separate from the shared
         /// <see cref="CentibelsToLinear"/> used by the volume-envelope sustain level (gen-37) — the two
-        /// are numerically identical today (both literal) but independently motivated, and a distinct
-        /// method + doc comment prevents a future dev from coupling two conversions that could
-        /// legitimately diverge again (DiVoid #7282 §8.4).
+        /// have diverged (gen-48 carries the <see cref="EmuAttenuationScale"/> pre-scale, gen-37 does
+        /// not), and a distinct method + doc comment prevents a future dev from re-coupling them
+        /// (DiVoid #7282 §8.4, #7305).
         /// </summary>
         static float BuildInitialAttenuationGain(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
             int instrumentCentibels = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0);
@@ -369,31 +382,32 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Converts a centibel InitialAttenuation(48) amount to linear gain using the literal SF2 2.04
-        /// §8.1.3 conversion, <c>10^(-cB/200)</c> — clamped to [0, <see cref="MaxSustainAttenuationCentibels"/>]
-        /// cB, same as <see cref="CentibelsToLinear"/>. This <b>reverts</b> the EMU8k/10k-hardware-derived
-        /// ~0.4 dB-per-dB scaling shipped in a prior revision of this fix (task #7269): that scaling was a
-        /// compensating hack for a separate, since-fixed engine gap — the engine played only the first
-        /// matching zone per note-on and dropped every other covering zone, so heavily-attenuated
-        /// "companion" zones that a compliant player sums for body/presence never sounded, and organs/
-        /// leads on fonts like OmegaGMGS2 rendered far too quiet. The 0.4 scale masked that symptom but was
-        /// not how the reference synth (FluidSynth) actually behaves: verified directly against
-        /// FluidSynth 2.5.7 source (<c>fluid_cb2amp</c> in <c>src/utils/fluid_conv.c</c>, and the gen-48
-        /// read path in <c>src/synth/fluid_voice.c</c>/<c>src/rvoice/fluid_rvoice.c</c>) — no scaling
-        /// constant exists anywhere in that chain, only the literal spec formula (DiVoid #7281, correcting
-        /// the "FluidSynth does this" claim in #7273). Now that <see cref="ResolveAll"/> plays every
-        /// covering zone (SF2 zone/layer stacking, #7282), the companion zones supply the presence
-        /// directly and the literal conversion is correct again. DO NOT reintroduce a scale factor here
-        /// without re-litigating both #7273 and #7281 — the two changes are causally coupled (#7282 §10,
-        /// §12). Used ONLY for InitialAttenuation(48); the volume envelope's sustain level (gen-37) has
-        /// always used the unscaled <see cref="CentibelsToLinear"/> and is untouched by any of this.
+        /// Converts a centibel InitialAttenuation(48) amount to linear gain using the SF2 2.04 §8.1.3
+        /// conversion pre-scaled by <see cref="EmuAttenuationScale"/> — <c>10^(-EmuAttenuationScale*cB/200)</c>
+        /// — clamped to [0, <see cref="MaxSustainAttenuationCentibels"/>] cB. A prior revision of this fix
+        /// (task #7269) shipped this same 0.4 scale, then a later revision (task #7282, PR #31) reverted
+        /// it to the literal (unscaled) formula on the premise that FluidSynth applies gen-48 literally
+        /// (#7281) and that the zone/layer stacking landing alongside it (#7282) would supply the missing
+        /// presence instead. <b>That premise was empirically wrong</b>: the per-voice gain audit in
+        /// #7305 renders single sustained notes through FluidSynth 2.5.7 and fits the observed
+        /// attenuation-vs-gen-48 slope directly — effective scale = 0.412, not 1.0 — and confirms it
+        /// independently by showing a 0.4x-scaled render collapses three single-zone presets (gen-48 =
+        /// 0/80/150 cB) from an 8.8 dB spread down to 0.4 dB. So the EMU ~0.4 scaling is not a hack that
+        /// stacking should have obsoleted; it is FluidSynth's actual behavior for this generator. This
+        /// restores the #7269 constant with #7305's empirical citation. Zone/layer stacking
+        /// (<see cref="ResolveAll"/>, #7282) is CORRECT and unrelated — FluidSynth stacks companion
+        /// zones too — the two fixes compose (0.4 scale per voice, all covering voices stacked), they do
+        /// not substitute for each other. DO NOT revert this constant back to literal without
+        /// re-litigating #7305. Used ONLY for InitialAttenuation(48); the volume envelope's sustain level
+        /// (gen-37) has always used the unscaled <see cref="CentibelsToLinear"/> and is untouched by any
+        /// of this.
         /// </summary>
         static float AttenuationCentibelsToLinear(int centibels) {
             if (centibels <= 0)
                 return 1f;
             if (centibels >= MaxSustainAttenuationCentibels)
                 return 0f;
-            return (float)Math.Pow(10.0, -centibels / 200.0);
+            return (float)Math.Pow(10.0, -EmuAttenuationScale * centibels / 200.0);
         }
 
         /// <summary>
