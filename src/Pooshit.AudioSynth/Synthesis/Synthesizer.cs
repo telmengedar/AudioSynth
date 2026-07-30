@@ -460,13 +460,24 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// layers of one note share a non-zero exclusive class (DiVoid #7282 does not specify behaviour
         /// for this compound edge case).
         /// </remarks>
+        /// <remarks>
+        /// Jenny's rev3 review (#7287, Focus #3) flagged the prior <c>slot.IsOccupied ? slot.Voice!.ExclusiveClass
+        /// : slot.PendingVoice?.ExclusiveClass</c> ordering as reading the WRONG layer's class for a
+        /// stolen slot: the victim voice is still fading in place, so a stolen sibling slot is always
+        /// <see cref="VoiceSlot.IsOccupied"/>, making the <c>PendingVoice</c> branch dead code and this
+        /// method choke on the victim's class instead of the incoming layer's. Fixed by keying on
+        /// <see cref="VoiceSlot.PendingVoice"/> first: a stolen slot always has one (the incoming layer,
+        /// set just before this call in <see cref="StartLayeredNote"/>), while a freshly-placed free-slot
+        /// layer never does (<see cref="PlaceVoiceInSlot"/> clears it), so its already-current
+        /// <see cref="VoiceSlot.Voice"/> IS the incoming layer.
+        /// </remarks>
         void ChokeSameClassVoicesForNote(int channel, List<int> noteSlots) {
             for (int n = 0; n < noteSlots.Count; n++) {
                 int slotIndex = noteSlots[n];
                 ref VoiceSlot slot = ref pool[slotIndex];
-                int exclusiveClass = slot.IsOccupied
-                    ? slot.Voice!.ExclusiveClass
-                    : slot.PendingVoice?.ExclusiveClass ?? 0;
+                int exclusiveClass = slot.PendingVoice != null
+                    ? slot.PendingVoice.ExclusiveClass
+                    : slot.Voice?.ExclusiveClass ?? 0;
 
                 if (exclusiveClass == 0)
                     continue;

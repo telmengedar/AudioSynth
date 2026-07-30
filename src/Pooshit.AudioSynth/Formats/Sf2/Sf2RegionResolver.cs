@@ -365,20 +365,38 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
         /// <summary>
         /// Reads generator 48 (InitialAttenuation, centibels) at both the instrument-zone level and the
-        /// preset-zone level and sums them — SF2 spec §8.1.2 defines InitialAttenuation as additive across
-        /// the preset and instrument generator levels, unlike a plain override — then converts the total
-        /// to a linear gain via <see cref="AttenuationCentibelsToLinear"/>. Absent gen-48 at both levels
-        /// sums to 0 cB, which maps to a gain of 1.0, so the region's amplitude is unchanged from before
-        /// this generator was read. Uses its own named conversion, kept separate from the shared
-        /// <see cref="CentibelsToLinear"/> used by the volume-envelope sustain level (gen-37) — the two
-        /// have diverged (gen-48 carries the <see cref="EmuAttenuationScale"/> pre-scale, gen-37 does
-        /// not), and a distinct method + doc comment prevents a future dev from re-coupling them
-        /// (DiVoid #7282 §8.4, #7305).
+        /// preset-zone level — SF2 spec §8.1.2 defines InitialAttenuation as additive across the preset
+        /// and instrument generator levels, unlike a plain override — and converts each level's
+        /// contribution to linear gain separately before multiplying them (equivalent to summing
+        /// centibels then converting, <i>except</i> for the one asymmetric case documented on
+        /// <see cref="EmuAttenuationScale"/>: a preset-level contribution inherited through the
+        /// <b>preset's own global zone</b> uses the literal, unscaled conversion
+        /// (<see cref="LiteralAttenuationCentibelsToLinear"/>) instead of the EMU-scaled one. Absent
+        /// gen-48 at both levels multiplies to a gain of 1.0, so the region's amplitude is unchanged from
+        /// before this generator was read.
         /// </summary>
         static float BuildInitialAttenuationGain(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
             int instrumentCentibels = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0);
-            int presetCentibels = GetEffectiveInt16(presetZone, presetGlobalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0);
-            return AttenuationCentibelsToLinear(instrumentCentibels + presetCentibels);
+            int presetCentibels = GetEffectiveInt16(
+                presetZone, presetGlobalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0,
+                out bool presetViaGlobalZoneFallback);
+
+            // The valid-range clamp (DiVoid #7269) is evaluated on the RAW SF2-spec total, exactly as
+            // before this method split the two levels' scale treatment apart: SF2's own [0, 1440] cB
+            // bound is a property of the combined attenuation regardless of which quirk-scale each
+            // component eventually gets, so a combined total at/above the max must still clamp to
+            // silence even when each individual component, converted on its own, would not.
+            int totalCentibels = instrumentCentibels + presetCentibels;
+            if (totalCentibels <= 0)
+                return 1f;
+            if (totalCentibels >= MaxSustainAttenuationCentibels)
+                return 0f;
+
+            float instrumentGain = AttenuationCentibelsToLinear(instrumentCentibels);
+            float presetGain = presetViaGlobalZoneFallback
+                ? LiteralAttenuationCentibelsToLinear(presetCentibels)
+                : AttenuationCentibelsToLinear(presetCentibels);
+            return instrumentGain * presetGain;
         }
 
         /// <summary>
@@ -402,12 +420,54 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         /// (gen-37) has always used the unscaled <see cref="CentibelsToLinear"/> and is untouched by any
         /// of this.
         /// </summary>
+        /// <remarks>
+        /// One documented exception (DiVoid #7312/#7313, #7326): a preset-level InitialAttenuation
+        /// contribution inherited through the <b>preset's own global zone</b> (rather than set directly
+        /// on the matched preset zone) does NOT get this scale — see
+        /// <see cref="LiteralAttenuationCentibelsToLinear"/> and its call site in
+        /// <see cref="BuildInitialAttenuationGain"/>.
+        /// </remarks>
         static float AttenuationCentibelsToLinear(int centibels) {
             if (centibels <= 0)
                 return 1f;
             if (centibels >= MaxSustainAttenuationCentibels)
                 return 0f;
             return (float)Math.Pow(10.0, -EmuAttenuationScale * centibels / 200.0);
+        }
+
+        /// <summary>
+        /// Converts a centibel InitialAttenuation(48) amount to linear gain using the literal, unscaled
+        /// SF2 2.04 §8.1.3 conversion (<c>10^(-cB/200)</c>, no <see cref="EmuAttenuationScale"/> pre-scale),
+        /// clamped to [0, <see cref="MaxSustainAttenuationCentibels"/>] cB. Used ONLY for the preset-level
+        /// InitialAttenuation contribution when <see cref="BuildInitialAttenuationGain"/> determines it
+        /// was inherited through the preset's own global zone rather than set directly on the matched
+        /// preset zone (DiVoid #7312/#7313, #7326).
+        /// </summary>
+        /// <remarks>
+        /// Root-caused via single-note isolation of the Ocarina preset (program 79, OmegaGMGS2.sf2): its
+        /// combined InitialAttenuation (100 cB) reaches the resolver entirely through the preset's global
+        /// zone (preset zone[0]) — the four velocity-split zones that actually match a note carry no
+        /// local gen-48 override. Hand-tracing <see cref="BuildInitialAttenuationGain"/>'s prior
+        /// EMU-scaled-sum behavior confirmed it computed exactly the documented value (100 cB × 0.4 →
+        /// gain 0.631, -4.0 dB) — the arithmetic was not wrong — yet back-solving FluidSynth 2.5.7's
+        /// measured single-note RMS for the identical note (with our own linear gain model as the
+        /// yardstick) implied an effective total attenuation near -10 dB, i.e. the LITERAL (unscaled)
+        /// conversion of the same 100 cB, not the EMU-scaled one. A same-file cross-check with
+        /// Distortion Guitar (program 30) — the only other of the five tested presets whose matched
+        /// zone lacks a local gen-48 override, but at the <b>instrument</b> level (falling back to its
+        /// instrument's own global zone, 240 cB) — showed NO excess: its measured offset sits inside the
+        /// same baseline band as the presets with no fallback at all. So the EMU quirk demonstrably still
+        /// applies to an instrument-level global-zone fallback; it is specifically the preset-level
+        /// global-zone fallback that needs the literal formula. DO NOT extend this literal treatment to
+        /// the instrument-level lookup in <see cref="BuildInitialAttenuationGain"/> without new evidence
+        /// — the Distortion Guitar cross-check would regress.
+        /// </remarks>
+        static float LiteralAttenuationCentibelsToLinear(int centibels) {
+            if (centibels <= 0)
+                return 1f;
+            if (centibels >= MaxSustainAttenuationCentibels)
+                return 0f;
+            return (float)Math.Pow(10.0, -centibels / 200.0);
         }
 
         /// <summary>
@@ -589,11 +649,30 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             return defaultValue;
         }
 
-        static int GetEffectiveInt16(Sf2Zone zone, Sf2Zone? globalZone, Sf2GeneratorType type, int defaultValue) {
-            if (TryFindGenerator(zone.Generators, type, out int local))
+        static int GetEffectiveInt16(Sf2Zone zone, Sf2Zone? globalZone, Sf2GeneratorType type, int defaultValue) =>
+            GetEffectiveInt16(zone, globalZone, type, defaultValue, out _);
+
+        /// <summary>
+        /// Same lookup as the 4-argument overload, plus <paramref name="viaGlobalZoneFallback"/> reporting
+        /// whether the returned value came from <paramref name="zone"/> itself (<c>false</c>) or was
+        /// inherited from <paramref name="globalZone"/> because <paramref name="zone"/> has no local
+        /// generator of this type (<c>true</c>); <c>false</c> when neither zone carries one and
+        /// <paramref name="defaultValue"/> is returned. <see cref="BuildInitialAttenuationGain"/> uses
+        /// this to single out the one case (preset-level InitialAttenuation inherited through the
+        /// preset's own global zone) that needs <see cref="LiteralAttenuationCentibelsToLinear"/> instead
+        /// of the EMU-scaled conversion (DiVoid #7312/#7313, #7326).
+        /// </summary>
+        static int GetEffectiveInt16(
+            Sf2Zone zone, Sf2Zone? globalZone, Sf2GeneratorType type, int defaultValue, out bool viaGlobalZoneFallback) {
+            if (TryFindGenerator(zone.Generators, type, out int local)) {
+                viaGlobalZoneFallback = false;
                 return (short)local;
-            if (globalZone != null && TryFindGenerator(globalZone.Generators, type, out int global))
+            }
+            if (globalZone != null && TryFindGenerator(globalZone.Generators, type, out int global)) {
+                viaGlobalZoneFallback = true;
                 return (short)global;
+            }
+            viaGlobalZoneFallback = false;
             return defaultValue;
         }
 

@@ -1,4 +1,6 @@
 using NUnit.Framework;
+using Pooshit.AudioSynth.Audio;
+using Pooshit.AudioSynth.Audio.Sinks;
 using Pooshit.AudioSynth.Synthesis;
 using Pooshit.AudioSynth.Tests.Helpers;
 
@@ -105,6 +107,39 @@ namespace Pooshit.AudioSynth.Tests {
                 Assert.That(voice.FastFadeForStealCalled, Is.False,
                     "stacked layers of one note-on must never choke each other, even sharing an exclusive class.");
             }
+        }
+
+        [Test]
+        [Description("A layer parked behind a steal (VoiceSlot.PendingVoice set, not yet placed) when " +
+                     "SilenceChannel (All Sound Off) fires must never resurrect: review #7287 Focus #4 " +
+                     "flagged that no test pinned SilenceChannel's PendingVoice=null cancellation, so a " +
+                     "future edit could drop it and the suite would stay green. With the pool exhausted " +
+                     "(maxVoices=1) a stacked layer's note-on steals the sole occupied slot and parks " +
+                     "instead of playing immediately; SilenceChannel must cancel that parked layer before " +
+                     "rendering ever reaches it, so it never calls RenderBlock (DiVoid #7282, #7249 W1).")]
+        public void SilenceChannel_ParkedLayer_NeverResurrects() {
+            const int channel = 0;
+            SynthesizerOptions opts = new SynthesizerOptions(SampleRate, 1, 64, 1);
+
+            StubPatch occupantPatch = new StubPatch("occupant");
+            Synthesizer synth = new Synthesizer(opts, occupantPatch);
+            synth.NoteOn(channel, 42, 100); // occupies the sole slot (StubVoice: already inactive)
+
+            MultiVoicePatch layeredPatch = new MultiVoicePatch(voiceCount: 1);
+            synth.SetChannelPatch(channel, layeredPatch);
+            synth.NoteOn(channel, 60, 100); // pool exhausted -> this layer steals slot 0 and parks
+
+            Assert.That(layeredPatch.StartedVoices, Has.Count.EqualTo(1),
+                "the layered patch must still be asked to resolve its layer even though it will park, not play.");
+            RecordingExclusiveVoice parkedLayer = layeredPatch.StartedVoices[0];
+
+            synth.SilenceChannel(channel);
+
+            InMemoryAudioSink sink = new InMemoryAudioSink(synth.Format);
+            OfflineRenderer.Render(synth, sink, 256);
+
+            Assert.That(parkedLayer.RenderBlockCallCount, Is.EqualTo(0),
+                "SilenceChannel must cancel the parked layer before it ever renders -- no resurrection after All Sound Off.");
         }
 
         [Test]

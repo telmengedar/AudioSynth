@@ -32,6 +32,14 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         /// </summary>
         internal bool ReleaseCalled { get; private set; }
 
+        /// <summary>
+        /// Number of times <see cref="RenderBlock"/> has been called on this voice, so a test can assert
+        /// a layer parked behind a steal (<see cref="Synthesis.VoiceSlot.PendingVoice"/>) that gets
+        /// cancelled (e.g. by <see cref="ISynthesizer.SilenceChannel"/>) never actually starts rendering
+        /// -- i.e. never resurrects (DiVoid #7287 Focus #4).
+        /// </summary>
+        internal int RenderBlockCallCount { get; private set; }
+
         /// <inheritdoc/>
         public bool IsActive => true;
 
@@ -68,6 +76,7 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
 
         /// <inheritdoc/>
         public int RenderBlock(Span<float> block) {
+            RenderBlockCallCount++;
             block.Clear();
             return block.Length;
         }

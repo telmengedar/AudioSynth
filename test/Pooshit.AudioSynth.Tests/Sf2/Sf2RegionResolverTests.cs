@@ -47,6 +47,19 @@ namespace Pooshit.AudioSynth.Tests {
             new[] { Zone(Gen(Sf2GeneratorType.Instrument, (ushort)instrIndex),
                          Gen(Sf2GeneratorType.InitialAttenuation, (ushort)attenuationCentibels)) };
 
+        /// <summary>
+        /// Two preset zones shaped like the real Ocarina preset (program 79, OmegaGMGS2.sf2, DiVoid
+        /// #7312): zone[0] is the preset's GLOBAL zone (no Instrument generator) carrying
+        /// InitialAttenuation directly; zone[1] is the zone that actually matches a note (carries
+        /// Instrument, no local InitialAttenuation of its own), so its gen-48 can only be reached via
+        /// the global-zone fallback.
+        /// </summary>
+        static Sf2Zone[] PresetZoneWithGlobalAttenuationFallback(int instrIndex, short globalAttenuationCentibels) =>
+            new[] {
+                Zone(Gen(Sf2GeneratorType.InitialAttenuation, (ushort)globalAttenuationCentibels)),
+                Zone(Gen(Sf2GeneratorType.Instrument, (ushort)instrIndex))
+            };
+
         static Sf2Zone InstrumentZone(int keyLo, int keyHi, params Sf2Generator[] extras) {
             ushort keyRangeAmount = (ushort)(keyLo | (keyHi << 8));
             Sf2Generator keyRange = Gen(Sf2GeneratorType.KeyRange, keyRangeAmount);
@@ -1013,6 +1026,70 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
+        [Description("InitialAttenuation(48) inherited through the PRESET's own global zone (no local " +
+                     "override on the matched preset zone) uses the LITERAL (unscaled) conversion, not " +
+                     "the EMU-0.4-scaled one -- DiVoid #7312/#7313/#7326. Root cause of the Ocarina " +
+                     "(program 79, OmegaGMGS2.sf2) per-voice gain excess: hand-tracing the prior code " +
+                     "showed it computed the documented EMU-scaled value exactly (100 cB -> 0.631, -4 dB) " +
+                     "-- the arithmetic was correct per its own formula -- but back-solving FluidSynth " +
+                     "2.5.7's measured single-note RMS for the identical note (using our own linear gain " +
+                     "model as the yardstick) implied an effective attenuation near -10 dB, i.e. the " +
+                     "literal conversion of the same 100 cB.")]
+        public void TryResolve_PresetAttenuationViaGlobalZoneFallback_UsesLiteralConversion() {
+            Sf2Zone[] presetZones = PresetZoneWithGlobalAttenuationFallback(0, globalAttenuationCentibels: 100);
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.316f).Within(0.005f),
+                "100 cB inherited via the preset's global zone must map to the LITERAL 10^(-100/200) " +
+                "≈ 0.316, not the EMU-scaled 10^(-0.4*100/200) ≈ 0.631 used for a directly-set value.");
+        }
+
+        [Test]
+        [Description("InitialAttenuation(48) inherited through the INSTRUMENT's own global zone still " +
+                     "uses the EMU-0.4-scaled conversion -- confirmed via a same-soundfont cross-check " +
+                     "(Distortion Guitar, program 30, OmegaGMGS2.sf2) whose matched instrument zone has " +
+                     "no local gen-48 and falls back to its instrument's global zone (240 cB), yet shows " +
+                     "no excess against FluidSynth. Only PRESET-level global-zone fallback needs the " +
+                     "literal conversion; this instrument-level path must stay unaffected by that fix " +
+                     "(DiVoid #7312/#7313/#7326).")]
+        public void TryResolve_InstrumentAttenuationViaGlobalZoneFallback_StaysEmuScaled() {
+            Sf2Zone globalZone = Zone(Gen(Sf2GeneratorType.InitialAttenuation, 100));
+            Sf2Zone localZone = InstrumentZone(0, 127);
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { globalZone, localZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(0.631f).Within(0.005f),
+                "100 cB inherited via the INSTRUMENT's global zone must still map through the EMU-scaled " +
+                "conversion (10^(-0.4*100/200) ≈ 0.631) -- unlike the preset-level fallback case, " +
+                "this path is unaffected by the literal-conversion fix.");
+        }
+
+        [Test]
+        [Description("Preset-level attenuation via global-zone fallback (literal) and instrument-level " +
+                     "attenuation (EMU-scaled) still accumulate multiplicatively rather than one " +
+                     "replacing the other -- DiVoid #7312/#7313/#7326.")]
+        public void TryResolve_PresetGlobalFallbackAndInstrumentAttenuation_CombineMultiplicatively() {
+            Sf2Zone[] presetZones = PresetZoneWithGlobalAttenuationFallback(0, globalAttenuationCentibels: 100);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 60));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            float expected = 0.316f * 0.759f; // literal(100 cB) * EMU-scaled(60 cB)
+            Assert.That(found, Is.True);
+            Assert.That(region!.InitialAttenuationGain, Is.EqualTo(expected).Within(0.005f),
+                "literal preset-global-fallback gain (≈0.316) and EMU-scaled instrument gain " +
+                "(≈0.759) must multiply together, not override one another.");
+        }
+
+        [Test]
         [Description("SF2 zone/layer stacking (DiVoid #7282 §8.1): two instrument zones with overlapping " +
                      "KeyRange/VelocityRange both cover the same note, so ResolveAll must return BOTH as " +
                      "separate layers -- the emit-all cartesian, not the single first-match TryResolve returns.")]
@@ -1051,6 +1128,38 @@ namespace Pooshit.AudioSynth.Tests {
 
             Assert.That(count, Is.EqualTo(1),
                 "velocity 100 falls only in the loud zone's [64,127] range; the soft zone's [0,63] must not match.");
+        }
+
+        [Test]
+        [Description("SF2 zone/layer stacking cache-key correctness (DiVoid #7282 §7, review #7287 " +
+                     "warning #3): two preset zones sharing the SAME instrument zone (instrumentIndex=0, " +
+                     "instrumentZoneIndex=0) but carrying DIFFERENT preset-level InitialAttenuation must " +
+                     "resolve to two layers with DISTINCT cache keys and DISTINCT accumulated gain -- " +
+                     "proving the cache doesn't collide two regions that only differ by which preset zone " +
+                     "reached them (the exact collision the 3-field PackCacheKey exists to prevent; a " +
+                     "2-field (instrument, instrumentZone) key would merge both onto the same cached " +
+                     "region).")]
+        public void ResolveAll_TwoPresetZonesSharingOneInstrumentZone_ProduceDistinctCacheKeysAndGains() {
+            Sf2Zone[] presetZones = new[] {
+                Zone(Gen(Sf2GeneratorType.Instrument, 0), Gen(Sf2GeneratorType.InitialAttenuation, 40)),
+                Zone(Gen(Sf2GeneratorType.Instrument, 0), Gen(Sf2GeneratorType.InitialAttenuation, 100))
+            };
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { InstrumentZone(0, 127) });
+
+            List<Sf2ResolvedLayer> results = new List<Sf2ResolvedLayer>();
+            int count = resolver.ResolveAll(60, 100, results);
+
+            Assert.That(count, Is.EqualTo(2),
+                "both preset zones cover the note and share the same instrument zone; both must be emitted as layers.");
+            Assert.That(results[0].CacheKey, Is.Not.EqualTo(results[1].CacheKey),
+                "layers reached through different preset zones but the SAME instrument zone must get distinct cache keys.");
+            Assert.That(results[0].Region.InitialAttenuationGain, Is.Not.EqualTo(results[1].Region.InitialAttenuationGain),
+                "the two preset zones' different InitialAttenuation (40 cB vs 100 cB) must produce different " +
+                "accumulated gain, proving they weren't merged onto one cached region.");
+            Assert.That(results[0].Region.InitialAttenuationGain, Is.EqualTo(AttenuationGain(40)).Within(0.005f),
+                "first layer (preset zone[0], 40 cB) must carry its own accumulated gain.");
+            Assert.That(results[1].Region.InitialAttenuationGain, Is.EqualTo(AttenuationGain(100)).Within(0.005f),
+                "second layer (preset zone[1], 100 cB) must carry its own accumulated gain, distinct from the first.");
         }
 
         [Test]
