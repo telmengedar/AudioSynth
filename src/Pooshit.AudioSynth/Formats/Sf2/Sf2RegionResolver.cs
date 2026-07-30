@@ -8,9 +8,12 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
     /// Resolves a MIDI (key, velocity) pair through the SF2 two-level zone model to a
     /// <see cref="SampleRegion"/> (<see cref="TryResolve"/>, single first-covering-zone match) or to
     /// every covering zone at once (<see cref="ResolveAll"/>, the full preset-zone × instrument-zone
-    /// cartesian — SF2 zone/layer stacking, DiVoid #7282), implementing the v1 generator subset plus
-    /// preset-level + instrument-level InitialAttenuation(48) accumulation. This is the single home for
-    /// all SF2 interpretation; later generator families (offset generators, modulation) attach here.
+    /// cartesian — SF2 zone/layer stacking, DiVoid #7282), implementing the v1 generator subset plus the
+    /// general preset-level generator routing combiner (<see cref="EffectiveValue"/>, DiVoid #7327 §8.1 /
+    /// #7325): every "value" generator (filter, LFO, pan, sends, tuning, envelope times/sustain, and
+    /// InitialAttenuation(48)) is resolved as instrument-effective + preset-additive, not just gen-48 as
+    /// before. This is the single home for all SF2 interpretation; later generator families (offset
+    /// generators, modulation envelope) attach here.
     /// </summary>
     /// <remarks>
     /// Resolution is deterministic, rate-independent, and defensive: structurally-valid-but-
@@ -331,15 +334,15 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             int rootKey = ResolveRootKey(zone, globalZone, header);
 
             int pitchCorrectionCents = header.PitchCorrection
-                + GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.FineTune, defaultValue: 0)
-                + GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.CoarseTune, defaultValue: 0) * 100;
+                + EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.FineTune, instrumentDefault: 0)
+                + EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.CoarseTune, instrumentDefault: 0) * 100;
 
-            EnvelopeParameters envelope = BuildEnvelopeParameters(zone, globalZone);
-            FilterParameters filter = BuildFilterParameters(zone, globalZone);
-            LfoParameters lfo = BuildLfoParameters(zone, globalZone);
-            float pan = BuildPan(zone, globalZone);
-            float reverbSend = BuildReverbSend(zone, globalZone);
-            float chorusSend = BuildChorusSend(zone, globalZone);
+            EnvelopeParameters envelope = BuildEnvelopeParameters(zone, globalZone, presetZone, presetGlobalZone);
+            FilterParameters filter = BuildFilterParameters(zone, globalZone, presetZone, presetGlobalZone);
+            LfoParameters lfo = BuildLfoParameters(zone, globalZone, presetZone, presetGlobalZone);
+            float pan = BuildPan(zone, globalZone, presetZone, presetGlobalZone);
+            float reverbSend = BuildReverbSend(zone, globalZone, presetZone, presetGlobalZone);
+            float chorusSend = BuildChorusSend(zone, globalZone, presetZone, presetGlobalZone);
             int exclusiveClass = GetEffectiveRaw(zone, globalZone, Sf2GeneratorType.ExclusiveClass, defaultValue: 0);
             float initialAttenuationGain = BuildInitialAttenuationGain(zone, globalZone, presetZone, presetGlobalZone);
 
@@ -364,21 +367,62 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Reads generator 48 (InitialAttenuation, centibels) at both the instrument-zone level and the
-        /// preset-zone level and sums them — SF2 spec §8.1.2 defines InitialAttenuation as additive across
-        /// the preset and instrument generator levels, unlike a plain override — then converts the total
-        /// to a linear gain via <see cref="AttenuationCentibelsToLinear"/>. Absent gen-48 at both levels
-        /// sums to 0 cB, which maps to a gain of 1.0, so the region's amplitude is unchanged from before
-        /// this generator was read. Uses its own named conversion, kept separate from the shared
-        /// <see cref="CentibelsToLinear"/> used by the volume-envelope sustain level (gen-37) — the two
-        /// have diverged (gen-48 carries the <see cref="EmuAttenuationScale"/> pre-scale, gen-37 does
-        /// not), and a distinct method + doc comment prevents a future dev from re-coupling them
-        /// (DiVoid #7282 §8.4, #7305).
+        /// Reads generator 48 (InitialAttenuation, centibels) via the general <see cref="EffectiveValue"/>
+        /// preset-generator-routing combiner — SF2 spec §8.1.2/§9.4 defines InitialAttenuation as additive
+        /// across the preset and instrument generator levels, unlike a plain override — then converts the
+        /// combined total to a linear gain via <see cref="AttenuationCentibelsToLinear"/>. This is gen-48's
+        /// fold-in to the general mechanism (DiVoid #7327 §8.1/§14 PR1 step 3): the manual dual-read this
+        /// method used to perform (instrument value + preset value, summed by hand) is now exactly what
+        /// <see cref="EffectiveValue"/> computes for every generator, so there is no separate code path
+        /// left to double-apply — deleting the old dual-read and routing through <see cref="EffectiveValue"/>
+        /// is bit-for-bit identical to the prior behavior (instrument-effective default 0, preset-additive
+        /// default 0, summed). Absent gen-48 at both levels sums to 0 cB, which maps to a gain of 1.0, so
+        /// the region's amplitude is unchanged from before this generator was read. Uses its own named
+        /// conversion, kept separate from the shared <see cref="CentibelsToLinear"/> used by the
+        /// volume-envelope sustain level (gen-37) — the two have diverged (gen-48 carries the
+        /// <see cref="EmuAttenuationScale"/> pre-scale, gen-37 does not), and a distinct method + doc
+        /// comment prevents a future dev from re-coupling them (DiVoid #7282 §8.4, #7305).
         /// </summary>
         static float BuildInitialAttenuationGain(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
-            int instrumentCentibels = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0);
-            int presetCentibels = GetEffectiveInt16(presetZone, presetGlobalZone, Sf2GeneratorType.InitialAttenuation, defaultValue: 0);
-            return AttenuationCentibelsToLinear(instrumentCentibels + presetCentibels);
+            int totalCentibels = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.InitialAttenuation, instrumentDefault: 0);
+            return AttenuationCentibelsToLinear(totalCentibels);
+        }
+
+        /// <summary>
+        /// The general preset-generator routing combiner (SF2 §9.4, DiVoid #7327 §8.1): the effective
+        /// value of a "value" generator is <c>instrumentEffective + presetAdditive</c>, where
+        /// <c>instrumentEffective</c> is the existing instrument-level resolution (local zone override,
+        /// else instrument global zone, else <paramref name="instrumentDefault"/> — unchanged from
+        /// pre-Phase-1 behavior) and <c>presetAdditive</c> is the preset-level contribution (preset local
+        /// zone override, else preset global zone, else <b>0</b>). The preset side's default is always 0,
+        /// never the generator's musical default (<paramref name="instrumentDefault"/>) — an absent
+        /// preset-level generator must contribute nothing, or the default would be double-counted on top
+        /// of the instrument-level effective value that already resolved it.
+        /// <para>
+        /// Invariant (regression guard): for a generator absent at the preset level (the common case —
+        /// most presets carry no preset-zone value generators), <c>EffectiveValue == instrumentEffective</c>
+        /// byte-for-byte, so routing a generator through this combiner for the first time cannot change any
+        /// render that doesn't actually use a preset-level generator.
+        /// </para>
+        /// <para>
+        /// Applicability: only "value" generators route through here. The following remain
+        /// instrument-only and must keep calling <see cref="GetEffectiveInt16"/>/<see cref="GetEffectiveRaw"/>
+        /// directly, never this method: sample address offsets (StartAddressOffset/EndAddressOffset/
+        /// StartLoopAddressOffset/EndLoopAddressOffset/StartAddressCoarseOffset/EndAddressCoarseOffset/
+        /// StartLoopAddressCoarseOffset/EndLoopAddressCoarseOffset), KeyNumber(46), Velocity(47),
+        /// SampleModes(54), ExclusiveClass(57), OverridingRootKey(58), SampleID(53), Instrument(41).
+        /// KeyRange(43)/VelocityRange(44) are zone-selection generators handled by
+        /// <see cref="ZoneCoversNote"/> and are never summed at all.
+        /// </para>
+        /// </summary>
+        static int EffectiveValue(
+            Sf2Zone zone, Sf2Zone? globalZone,
+            Sf2Zone presetZone, Sf2Zone? presetGlobalZone,
+            Sf2GeneratorType type, int instrumentDefault) {
+            int instrumentEffective = GetEffectiveInt16(zone, globalZone, type, instrumentDefault);
+            int presetAdditive = GetEffectiveInt16(presetZone, presetGlobalZone, type, defaultValue: 0);
+            return instrumentEffective + presetAdditive;
         }
 
         /// <summary>
@@ -411,11 +455,12 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Reads generator 17 (Pan) and normalises its SF2-spec ±500 raw range to [-1,1]; absent or
-        /// out-of-range raw values default to/clamp toward centre (0).
+        /// Reads generator 17 (Pan) via the general <see cref="EffectiveValue"/> preset-routing combiner
+        /// and normalises its SF2-spec ±500 raw range to [-1,1]; absent or out-of-range raw values
+        /// default to/clamp toward centre (0).
         /// </summary>
-        static float BuildPan(Sf2Zone zone, Sf2Zone? globalZone) {
-            int raw = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.Pan, defaultValue: 0);
+        static float BuildPan(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
+            int raw = EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.Pan, instrumentDefault: 0);
             if (raw > MaxPanUnits)
                 raw = MaxPanUnits;
             if (raw < -MaxPanUnits)
@@ -424,13 +469,13 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Reads generator 16 (reverbEffectsSend) in 0.1%-units (0..1000 → 0..1); absent defaults to the
-        /// SF2 spec's literal generator default of 0 — an absent gen-16 contributes no additive bias, so
-        /// the channel's CC91 send still drives the voice on its own (combination is additive/clamped,
-        /// design §9.3 revised).
+        /// Reads generator 16 (reverbEffectsSend) via the general <see cref="EffectiveValue"/> combiner in
+        /// 0.1%-units (0..1000 → 0..1); absent at both levels defaults to the SF2 spec's literal generator
+        /// default of 0 — an absent gen-16 contributes no additive bias, so the channel's CC91 send still
+        /// drives the voice on its own (combination is additive/clamped, design §9.3 revised).
         /// </summary>
-        static float BuildReverbSend(Sf2Zone zone, Sf2Zone? globalZone) {
-            int raw = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.ReverbEffectsSend, defaultValue: 0);
+        static float BuildReverbSend(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
+            int raw = EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ReverbEffectsSend, instrumentDefault: 0);
             if (raw > MaxReverbSendUnits)
                 raw = MaxReverbSendUnits;
             if (raw < 0)
@@ -439,13 +484,13 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Reads generator 15 (chorusEffectsSend) in 0.1%-units (0..1000 → 0..1); absent defaults to the
-        /// SF2 spec's literal generator default of 0 — an absent gen-15 contributes no additive bias, so
-        /// the channel's CC93 send still drives the voice on its own (additive/clamped combination,
-        /// design #7190 §8).
+        /// Reads generator 15 (chorusEffectsSend) via the general <see cref="EffectiveValue"/> combiner in
+        /// 0.1%-units (0..1000 → 0..1); absent at both levels defaults to the SF2 spec's literal generator
+        /// default of 0 — an absent gen-15 contributes no additive bias, so the channel's CC93 send still
+        /// drives the voice on its own (additive/clamped combination, design #7190 §8).
         /// </summary>
-        static float BuildChorusSend(Sf2Zone zone, Sf2Zone? globalZone) {
-            int raw = GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.ChorusEffectsSend, defaultValue: 0);
+        static float BuildChorusSend(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
+            int raw = EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ChorusEffectsSend, instrumentDefault: 0);
             if (raw > MaxChorusSendUnits)
                 raw = MaxChorusSendUnits;
             if (raw < 0)
@@ -453,11 +498,19 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             return raw / ChorusSendUnitsDivisor;
         }
 
-        static FilterParameters BuildFilterParameters(Sf2Zone zone, Sf2Zone? globalZone) {
-            int cutoffCents = GetEffectiveInt16(
-                zone, globalZone, Sf2GeneratorType.InitialFilterCutoffFrequency, DefaultFilterCutoffCents);
-            int resonanceCentibels = GetEffectiveInt16(
-                zone, globalZone, Sf2GeneratorType.InitialFilterQ, defaultValue: 0);
+        /// <summary>
+        /// Builds the static filter descriptor from gen-8 (cutoff) + gen-9 (Q), each combined via the
+        /// general <see cref="EffectiveValue"/> preset-routing combiner (DiVoid #7327 §8.1) so a
+        /// preset-level filter generator (e.g. Ocarina's preset-global InitialFilterQ) now reaches the
+        /// region instead of being silently dropped. gen-11 (ModulationEnvelopeToFilterCutoffFrequency) is
+        /// intentionally NOT read here — routing it requires the Phase-2 modulation envelope (DiVoid
+        /// #7327 §9.2); Phase 1 is routing-only and does not add new generator consumption.
+        /// </summary>
+        static FilterParameters BuildFilterParameters(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
+            int cutoffCents = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.InitialFilterCutoffFrequency, DefaultFilterCutoffCents);
+            int resonanceCentibels = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.InitialFilterQ, instrumentDefault: 0);
 
             float cutoffHz = FilterCutoffCentsToHz(cutoffCents);
             float resonance = FilterCentibelsToResonance(resonanceCentibels);
@@ -483,27 +536,27 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             return (float)q;
         }
 
-        static LfoParameters BuildLfoParameters(Sf2Zone zone, Sf2Zone? globalZone) {
+        static LfoParameters BuildLfoParameters(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
             float delay = TimecentsToSeconds(
-                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.DelayModulationLFO, DefaultEnvelopeTimecents));
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.DelayModulationLFO, DefaultEnvelopeTimecents));
             float frequencyHz = LfoFrequencyCentsToHz(
-                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.FrequencyModulationLFO, defaultValue: 0));
-            int pitchDepthCents = GetEffectiveInt16(
-                zone, globalZone, Sf2GeneratorType.ModulationLFOToPitch, defaultValue: 0);
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.FrequencyModulationLFO, instrumentDefault: 0));
+            int pitchDepthCents = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ModulationLFOToPitch, instrumentDefault: 0);
             if (pitchDepthCents > MaxLfoPitchDepthCents)
                 pitchDepthCents = MaxLfoPitchDepthCents;
             if (pitchDepthCents < -MaxLfoPitchDepthCents)
                 pitchDepthCents = -MaxLfoPitchDepthCents;
 
-            int volumeDepthCentibels = GetEffectiveInt16(
-                zone, globalZone, Sf2GeneratorType.ModulationLFOToVolume, defaultValue: 0);
+            int volumeDepthCentibels = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ModulationLFOToVolume, instrumentDefault: 0);
             if (volumeDepthCentibels > MaxLfoVolumeDepthCentibels)
                 volumeDepthCentibels = MaxLfoVolumeDepthCentibels;
             if (volumeDepthCentibels < -MaxLfoVolumeDepthCentibels)
                 volumeDepthCentibels = -MaxLfoVolumeDepthCentibels;
 
-            int filterDepthCents = GetEffectiveInt16(
-                zone, globalZone, Sf2GeneratorType.ModulationLFOToFilterCutoffFrequency, defaultValue: 0);
+            int filterDepthCents = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ModulationLFOToFilterCutoffFrequency, instrumentDefault: 0);
             if (filterDepthCents > MaxLfoFilterDepthCents)
                 filterDepthCents = MaxLfoFilterDepthCents;
             if (filterDepthCents < -MaxLfoFilterDepthCents)
@@ -521,19 +574,19 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             return (float)hz;
         }
 
-        static EnvelopeParameters BuildEnvelopeParameters(Sf2Zone zone, Sf2Zone? globalZone) {
+        static EnvelopeParameters BuildEnvelopeParameters(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
             float delay = TimecentsToSeconds(
-                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.DelayVolumeEnvelope, DefaultEnvelopeTimecents));
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.DelayVolumeEnvelope, DefaultEnvelopeTimecents));
             float attack = TimecentsToSeconds(
-                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.AttackVolumeEnvelope, DefaultEnvelopeTimecents));
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.AttackVolumeEnvelope, DefaultEnvelopeTimecents));
             float hold = TimecentsToSeconds(
-                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.HoldVolumeEnvelope, DefaultEnvelopeTimecents));
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.HoldVolumeEnvelope, DefaultEnvelopeTimecents));
             float decay = TimecentsToSeconds(
-                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.DecayVolumeEnvelope, DefaultEnvelopeTimecents));
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.DecayVolumeEnvelope, DefaultEnvelopeTimecents));
             float sustain = CentibelsToLinear(
-                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.SustainVolumeEnvelope, defaultValue: 0));
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.SustainVolumeEnvelope, instrumentDefault: 0));
             float release = TimecentsToSeconds(
-                GetEffectiveInt16(zone, globalZone, Sf2GeneratorType.ReleaseVolumeEnvelope, DefaultEnvelopeTimecents));
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ReleaseVolumeEnvelope, DefaultEnvelopeTimecents));
             return new EnvelopeParameters(delay, attack, hold, decay, sustain, release);
         }
 
