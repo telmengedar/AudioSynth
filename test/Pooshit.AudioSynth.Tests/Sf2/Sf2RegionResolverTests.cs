@@ -47,6 +47,10 @@ namespace Pooshit.AudioSynth.Tests {
             new[] { Zone(Gen(Sf2GeneratorType.Instrument, (ushort)instrIndex),
                          Gen(Sf2GeneratorType.InitialAttenuation, (ushort)attenuationCentibels)) };
 
+        static Sf2Zone[] PresetZoneWithInstrumentAndGenerator(int instrIndex, Sf2GeneratorType type, short amount) =>
+            new[] { Zone(Gen(Sf2GeneratorType.Instrument, (ushort)instrIndex),
+                         Gen(type, unchecked((ushort)amount))) };
+
         static Sf2Zone InstrumentZone(int keyLo, int keyHi, params Sf2Generator[] extras) {
             ushort keyRangeAmount = (ushort)(keyLo | (keyHi << 8));
             Sf2Generator keyRange = Gen(Sf2GeneratorType.KeyRange, keyRangeAmount);
@@ -1103,5 +1107,150 @@ namespace Pooshit.AudioSynth.Tests {
         const double EmuAttenuationScale = 0.4;
 
         static float AttenuationGain(int centibels) => (float)Math.Pow(10.0, -EmuAttenuationScale * centibels / 200.0);
+
+        // --- Phase 1: general preset-generator additive routing (DiVoid #7327 §8.1, #7325) ---
+
+        [Test]
+        [Description("A preset-level Pan(17) generator (NOT gen-48) now additively offsets the " +
+                     "instrument-level Pan via the general EffectiveValue combiner -- closing the " +
+                     "'preset generators dropped except gen-48' gap for a representative non-attenuation " +
+                     "generator. Instrument Pan raw=100, preset-level Pan raw=150 -> combined raw=250 -> 0.5.")]
+        public void TryResolve_PresetLevelPanGenerator_AddsAdditivelyToInstrumentPan() {
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndGenerator(0, Sf2GeneratorType.Pan, amount: 150);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.Pan, 100));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(0.5f).Within(1e-6f),
+                "instrument Pan=100 + preset-level Pan=150 = 250 raw -> 250/500 = 0.5, proving the preset " +
+                "generator reached the region additively, not just gen-48.");
+        }
+
+        [Test]
+        [Description("A preset-level InitialFilterQ(9) generator (Ocarina's actual shape: preset-global " +
+                     "filter resonance, no instrument-level contribution) additively raises the combined " +
+                     "resonance to the exact expected value -- the general combiner threading into " +
+                     "BuildFilterParameters. QA review #7331 computed 10^(9/20)*0.707 = 1.993 for this " +
+                     "case; asserting the precise number (not just Is.GreaterThan) locks the resonance " +
+                     "conversion, not merely its direction.")]
+        public void TryResolve_PresetLevelFilterQGenerator_AddsAdditivelyToInstrumentResonance() {
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndGenerator(0, Sf2GeneratorType.InitialFilterQ, amount: 90);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127);
+
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            AssertResolved(resolver, out SampleRegion? region);
+
+            Assert.That(region!.Filter.Resonance, Is.EqualTo(1.993f).Within(0.001f),
+                "preset-global InitialFilterQ=90 cB with no instrument-level contribution must resolve to " +
+                "exactly 10^(9/20)*0.707 ~= 1.993 (DiVoid #7331), not merely 'greater than' the flat " +
+                "Butterworth baseline.");
+        }
+
+        static void AssertResolved(Sf2RegionResolver resolver, out SampleRegion? region) {
+            bool found = resolver.TryResolve(60, 100, out region, out _);
+            Assert.That(found, Is.True);
+        }
+
+        [Test]
+        [Description("Regression guard (DiVoid #7327 §8.1 invariant): when a generator is ABSENT at the " +
+                     "preset level, EffectiveValue must equal the instrument-effective value byte-for-byte " +
+                     "-- an absent preset generator contributes +0, never falling back to the generator's " +
+                     "musical default (which would double-count it). Instrument Pan=250 (0.5) with a " +
+                     "preset zone carrying no Pan generator must render identically to the instrument-only case.")]
+        public void TryResolve_AbsentPresetLevelGenerator_ContributesZero_MatchesInstrumentOnly() {
+            Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.Pan, 250));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(0.5f).Within(1e-6f),
+                "absent preset-level Pan must contribute 0, leaving the instrument-effective Pan=250 (0.5) unchanged.");
+        }
+
+        [Test]
+        [Description("A preset-level FineTune(52) generator additively offsets pitchCorrectionCents -- " +
+                     "tuning is a general 'value' generator that must route through EffectiveValue exactly " +
+                     "like Pan/filter/envelope, not just gen-48.")]
+        public void TryResolve_PresetLevelFineTuneGenerator_AddsAdditivelyToPitchCorrection() {
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndGenerator(0, Sf2GeneratorType.FineTune, amount: 20);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.FineTune, unchecked((ushort)(short)15)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.PitchCorrectionCents, Is.EqualTo(35),
+                "instrument FineTune=15 + preset-level FineTune=20 = 35 cents.");
+        }
+
+        [Test]
+        [Description("Preset-level local zone overrides preset-level global zone (SF2 §9.4: preset local " +
+                     "zone overrides preset global zone to form the single preset additive value) before " +
+                     "being added to the instrument-effective value -- the preset side of EffectiveValue " +
+                     "follows the same local-over-global precedence as the instrument side.")]
+        public void TryResolve_PresetLocalGeneratorOverridesPresetGlobal_BeforeAddingToInstrument() {
+            Sf2Zone[] presetZones = {
+                Zone(Gen(Sf2GeneratorType.Pan, unchecked((ushort)(short)-500))), // preset global: -500
+                Zone(Gen(Sf2GeneratorType.Instrument, 0), Gen(Sf2GeneratorType.Pan, 500)) // preset local: +500
+            };
+            Sf2Zone instrumentZone = InstrumentZone(0, 127);
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(1f).Within(1e-6f),
+                "preset-local Pan=+500 must win over preset-global Pan=-500 (giving +500, not 0 or -500), " +
+                "then add to instrument-effective Pan=0 (absent) -> 500/500 = 1.0.");
+        }
+
+        [Test]
+        [Description("Regression lock (DiVoid #7327 §14 PR1 step 3): folding gen-48 into the general " +
+                     "EffectiveValue combiner must not double-apply the EMU-0.4 scaling -- re-running the " +
+                     "#7305 single-zone gen-48 values (0/80/150 cB, instrument-level only) through the new " +
+                     "code path must produce EXACTLY the gains the bespoke dual-read produced " +
+                     "(10^(-0.4*cB/200)), proving the fold-in is bit-for-bit equivalent to the old manual " +
+                     "instrument+preset summation -- not a different scale sneaking in via double-counting.")]
+        public void TryResolve_Gen48SingleZoneSpread_MatchesBespokePathAfterFoldIn() {
+            (Sf2RegionResolver r0, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 0)) });
+            (Sf2RegionResolver r80, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 80)) });
+            (Sf2RegionResolver r150, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { InstrumentZone(0, 127, Gen(Sf2GeneratorType.InitialAttenuation, 150)) });
+
+            r0.TryResolve(60, 100, out SampleRegion? region0, out _);
+            r80.TryResolve(60, 100, out SampleRegion? region80, out _);
+            r150.TryResolve(60, 100, out SampleRegion? region150, out _);
+
+            Assert.That(region0!.InitialAttenuationGain, Is.EqualTo(AttenuationGain(0)).Within(0.005f),
+                "0 cB (instrument-only, no preset contribution) must still map through the EMU-0.4-scaled conversion.");
+            Assert.That(region80!.InitialAttenuationGain, Is.EqualTo(AttenuationGain(80)).Within(0.005f),
+                "80 cB (instrument-only) must map to 10^(-0.4*80/200), not a doubled or halved scale.");
+            Assert.That(region150!.InitialAttenuationGain, Is.EqualTo(AttenuationGain(150)).Within(0.005f),
+                "150 cB (instrument-only) must map to 10^(-0.4*150/200), not a doubled or halved scale.");
+        }
+
+        [Test]
+        [Description("Clamp-after-sum boundary (QA review #7331 insight): instrument-level Pan(17) plus " +
+                     "preset-level Pan(17) sums past the +500 SF2-spec ceiling before normalisation -- the " +
+                     "additive combiner must clamp the SUMMED raw value, not just each side individually, " +
+                     "so the resolved Pan lands exactly at the clamped +1.0 instead of overflowing past it. " +
+                     "Hardens the newly-reachable additive-then-clamp path before Phase 2 stacks dynamic " +
+                     "values on top.")]
+        public void TryResolve_PresetAndInstrumentPan_SumBeyondClampCeiling_IsClampedAfterSum() {
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndGenerator(0, Sf2GeneratorType.Pan, amount: 400);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.Pan, 400));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Pan, Is.EqualTo(1f).Within(1e-6f),
+                "instrument Pan=400 + preset Pan=400 = 800 raw, well past the +500 SF2-spec ceiling; the " +
+                "additive sum must clamp to +500 before normalising, yielding exactly +1.0, not an " +
+                "out-of-range overflow.");
+        }
     }
 }
