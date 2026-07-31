@@ -6,8 +6,8 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
     /// <see cref="IVoice"/> that reads a mono <see cref="SampleRegion"/> at a pitch-derived increment with
     /// linear interpolation and renders a mono block, applying the region's <see cref="BiquadLowPassFilter"/>
     /// then its <see cref="AmplitudeEnvelope"/> and a <see cref="GainRamp"/>. Each control tick recomputes
-    /// pitch (LFO, pitch-bend, mod-wheel) and the effective filter cutoff (base + LFO + mod-envelope,
-    /// combined in cents); zero depth on every routing reproduces the pre-feature render bit-for-bit.
+    /// pitch (LFO, pitch-bend, mod-wheel, mod-envelope) and the effective filter cutoff (base + LFO +
+    /// mod-envelope, combined in cents); zero depth on every routing reproduces the pre-feature render bit-for-bit.
     /// </summary>
     public sealed class SamplePlaybackVoice : IVoice {
 
@@ -166,7 +166,12 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
                         modVibrato = 1f;
                     }
 
-                    effectiveIncrement = pitchIncrement * regionVibrato * modVibrato * bendFactor;
+                    float modEnvValue = modEnv.Advance(ControlRateFrames);
+                    float modEnvVibrato = region.ModEnvToPitchCents != 0f
+                        ? (float)Math.Pow(2.0, modEnvValue * region.ModEnvToPitchCents / 1200.0)
+                        : 1f;
+
+                    effectiveIncrement = pitchIncrement * regionVibrato * modVibrato * modEnvVibrato * bendFactor;
 
                     if (region.Lfo.VolumeDepthCentibels != 0f) {
                         float tremoloTarget = (float)Math.Pow(10.0, lfoValue * region.Lfo.VolumeDepthCentibels / 200.0);
@@ -176,7 +181,6 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
                         tremoloCurrent = 1f;
                     }
 
-                    float modEnvValue = modEnv.Advance(ControlRateFrames);
                     float effectiveCutoffCents = baseCutoffCents
                         + lfoValue * region.Lfo.FilterDepthCents
                         + modEnvValue * region.Filter.ModEnvToCutoffCents;

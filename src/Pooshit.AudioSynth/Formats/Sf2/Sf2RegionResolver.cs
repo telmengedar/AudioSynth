@@ -32,6 +32,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const int MaxLfoVolumeDepthCentibels = 960;
         const int MaxLfoFilterDepthCents = 12000;
         const int MaxModEnvFilterDepthCents = 12000;
+        const int MaxModEnvPitchDepthCents = 12000;
         const int MaxModEnvSustainUnits = 1000;
         const int MaxPanUnits = 500;
         const float PanUnitsDivisor = 500f;
@@ -320,6 +321,7 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             float initialAttenuationGain = BuildInitialAttenuationGain(zone, globalZone, presetZone, presetGlobalZone);
             (ModulationEnvelopeParameters modEnv, float modEnvHoldTc, float modEnvDecayTc, float modEnvHoldKeyC, float modEnvDecayKeyC) =
                 BuildModEnvParameters(zone, globalZone, presetZone, presetGlobalZone);
+            float modEnvToPitchCents = BuildModEnvToPitchCents(zone, globalZone, presetZone, presetGlobalZone);
 
             return new SampleRegion(
                 floatPool,
@@ -343,7 +345,23 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 modEnvHoldTc,
                 modEnvDecayTc,
                 modEnvHoldKeyC,
-                modEnvDecayKeyC);
+                modEnvDecayKeyC,
+                modEnvToPitchCents);
+        }
+
+        /// <summary>
+        /// Reads generator 7 (ModulationEnvelopeToPitch, cents) via <see cref="EffectiveValue"/>, clamped to
+        /// ±<see cref="MaxModEnvPitchDepthCents"/>. Key/velocity-independent, so it bakes straight into the
+        /// region — unlike hold/decay, gen-7 has no keynum coefficient pair.
+        /// </summary>
+        static float BuildModEnvToPitchCents(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
+            int cents = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ModulationEnvelopeToPitch, instrumentDefault: 0);
+            if (cents > MaxModEnvPitchDepthCents)
+                cents = MaxModEnvPitchDepthCents;
+            if (cents < -MaxModEnvPitchDepthCents)
+                cents = -MaxModEnvPitchDepthCents;
+            return cents;
         }
 
         /// <summary>

@@ -507,6 +507,63 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
+        [Description("Absent ModulationEnvelopeToPitch(7) yields zero depth (inert): pitch is unaffected by the " +
+                     "modulation envelope regardless of its shape, mirroring the gen-11 bypass invariant.")]
+        public void TryResolve_NoModEnvToPitchGenerator_YieldsZeroDepth() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnvToPitchCents, Is.EqualTo(0f),
+                "Absent ModulationEnvelopeToPitch(7) must map to zero depth (inert).");
+        }
+
+        [Test]
+        [Description("ModulationEnvelopeToPitch(7) generator maps directly to ModEnvToPitchCents.")]
+        public void TryResolve_ModEnvToPitchGenerator_MapsToModEnvToPitchCents() {
+            Sf2Zone zone = InstrumentZone(0, 127,
+                Gen(Sf2GeneratorType.ModulationEnvelopeToPitch, unchecked((ushort)(short)200)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnvToPitchCents, Is.EqualTo(200f),
+                "ModulationEnvelopeToPitch=200 cents must map directly to ModEnvToPitchCents.");
+        }
+
+        [Test]
+        [Description("A preset-zone ModulationEnvelopeToPitch(7) adds to the instrument-zone value, per the " +
+                     "general preset-additive routing that applies to gen-7 like any other value generator.")]
+        public void TryResolve_PresetModEnvToPitch_AddsToInstrumentValue() {
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndGenerator(0, Sf2GeneratorType.ModulationEnvelopeToPitch, 50);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationEnvelopeToPitch, 150));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnvToPitchCents, Is.EqualTo(200f),
+                "preset(50) + instrument(150) must sum to 200 cents.");
+        }
+
+        [Test]
+        [Description("A ModulationEnvelopeToPitch generator beyond the ±12000-cent stability cap is clamped.")]
+        public void TryResolve_ModEnvToPitchBeyondCap_IsClamped() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationEnvelopeToPitch, 20000));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnvToPitchCents, Is.EqualTo(12000f),
+                "20000-cent depth must clamp to the +12000-cent stability cap.");
+        }
+
+        [Test]
         [Description("Absent modulation-envelope generators yield the SF2 default times (≈0.977 ms) and full sustain (1.0).")]
         public void TryResolve_NoModEnvGens_UsesSf2Defaults() {
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
