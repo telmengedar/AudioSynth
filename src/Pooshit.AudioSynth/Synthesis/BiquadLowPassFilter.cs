@@ -3,18 +3,10 @@ using System;
 namespace Pooshit.AudioSynth.Synthesis {
 
     /// <summary>
-    /// Per-voice resonant low-pass filter: a single RBJ Audio-EQ-Cookbook low-pass biquad section in
-    /// Transposed Direct Form II, whose coefficients are computed at note start from a
-    /// <see cref="FilterParameters"/> descriptor and the output sample rate, then applied one sample at a
-    /// time.  <see cref="SetCutoff"/> lets a caller re-target the cutoff later in the note (filter-sweep),
-    /// recomputing coefficients while preserving filter state so the sweep is click-free.  It is a mutable
-    /// struct advanced in place, like <see cref="AmplitudeEnvelope"/> and <see cref="GainRamp"/>; copying
-    /// it by value loses the in-flight filter state.  <see cref="Process"/> is a single-sample multiply-add
-    /// step, so block size is never an input (INV-1); coefficient recomputation is driven only at the
-    /// caller's control rate, so the per-sample hot path stays allocation- and transcendental-free.  An
-    /// open cutoff is realised as an exact passthrough, and cutoff and resonance are clamped so the
-    /// coefficients are always finite and the section never itself produces NaN or infinity (INV-2
-    /// support; <see cref="Synthesizer"/> remains the final choke point).
+    /// Per-voice resonant low-pass filter: an RBJ Audio-EQ-Cookbook biquad in Transposed Direct Form II,
+    /// coefficients computed from a <see cref="FilterParameters"/> descriptor and re-targetable via
+    /// <see cref="SetCutoff"/> without a click. B-coefficients carry a <c>1/√Q</c> passband-gain
+    /// compensation, source-confirmed against FluidSynth 2.5.7's <c>fluid_iir_filter_impl.cpp</c>.
     /// </summary>
     public struct BiquadLowPassFilter {
 
@@ -25,6 +17,7 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         readonly int sampleRate;
         readonly float q;
+        readonly float filterGain;
 
         bool bypass;
         float b0;
@@ -50,6 +43,7 @@ namespace Pooshit.AudioSynth.Synthesis {
 
             this.sampleRate = sampleRate;
             q = Clamp(parameters.Resonance, MinResonance, MaxResonance);
+            filterGain = 1f / (float)Math.Sqrt(q);
             state1 = 0f;
             state2 = 0f;
             bypass = false;
@@ -115,9 +109,9 @@ namespace Pooshit.AudioSynth.Synthesis {
             double normA1 = -2.0 * cosW0;
             double normA2 = 1.0 - alpha;
 
-            b0 = (float)(normB0 / normA0);
-            b1 = (float)(normB1 / normA0);
-            b2 = (float)(normB2 / normA0);
+            b0 = (float)(normB0 / normA0) * filterGain;
+            b1 = (float)(normB1 / normA0) * filterGain;
+            b2 = (float)(normB2 / normA0) * filterGain;
             a1 = (float)(normA1 / normA0);
             a2 = (float)(normA2 / normA0);
         }

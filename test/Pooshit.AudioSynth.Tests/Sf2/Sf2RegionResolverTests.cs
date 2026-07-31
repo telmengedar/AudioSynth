@@ -448,6 +448,155 @@ namespace Pooshit.AudioSynth.Tests {
         }
 
         [Test]
+        [Description("Absent ModulationEnvelopeToFilterCutoffFrequency(11) yields zero depth (inert): the render is " +
+                     "unaffected by the modulation envelope regardless of its shape (design §8.2 bypass invariant).")]
+        public void TryResolve_NoModEnvToFilterGenerator_YieldsZeroDepth() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Filter.ModEnvToCutoffCents, Is.EqualTo(0f),
+                "Absent ModulationEnvelopeToFilterCutoffFrequency(11) must map to zero depth (inert).");
+        }
+
+        [Test]
+        [Description("ModulationEnvelopeToFilterCutoffFrequency(11) generator maps directly to ModEnvToCutoffCents.")]
+        public void TryResolve_ModEnvToFilterGenerator_MapsToModEnvToCutoffCents() {
+            Sf2Zone zone = InstrumentZone(0, 127,
+                Gen(Sf2GeneratorType.ModulationEnvelopeToFilterCutoffFrequency, unchecked((ushort)(short)-2630)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Filter.ModEnvToCutoffCents, Is.EqualTo(-2630f),
+                "ModulationEnvelopeToFilterCutoffFrequency=-2630 cents must map directly to ModEnvToCutoffCents.");
+        }
+
+        [Test]
+        [Description("A preset-zone ModulationEnvelopeToFilterCutoffFrequency(11) adds to the instrument-zone value " +
+                     "(design §5: the general preset-additive routing applies to gen-11 like any other value generator).")]
+        public void TryResolve_PresetModEnvToFilter_AddsToInstrumentValue() {
+            Sf2Zone[] presetZones = PresetZoneWithInstrumentAndGenerator(
+                0, Sf2GeneratorType.ModulationEnvelopeToFilterCutoffFrequency, -1000);
+            Sf2Zone instrumentZone = InstrumentZone(0, 127,
+                Gen(Sf2GeneratorType.ModulationEnvelopeToFilterCutoffFrequency, unchecked((ushort)(short)-1630)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(presetZones, new[] { instrumentZone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Filter.ModEnvToCutoffCents, Is.EqualTo(-2630f).Within(1e-3f),
+                "preset(-1000) + instrument(-1630) must sum to -2630 cents.");
+        }
+
+        [Test]
+        [Description("A ModulationEnvelopeToFilterCutoffFrequency generator beyond the ±12000-cent stability cap is clamped.")]
+        public void TryResolve_ModEnvToFilterBeyondCap_IsClamped() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.ModulationEnvelopeToFilterCutoffFrequency, 20000));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.Filter.ModEnvToCutoffCents, Is.EqualTo(12000f),
+                "20000-cent depth must clamp to the +12000-cent stability cap.");
+        }
+
+        [Test]
+        [Description("Absent modulation-envelope generators yield the SF2 default times (≈0.977 ms) and full sustain (1.0).")]
+        public void TryResolve_NoModEnvGens_UsesSf2Defaults() {
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(
+                PresetZoneWithInstrument(),
+                new[] { InstrumentZone(0, 127) });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnv.AttackSeconds, Is.EqualTo(ModulationEnvelopeParameters.Sf2DefaultTimeSeconds).Within(1e-5f),
+                "absent AttackModulationEnvelope must map to the SF2 default time.");
+            Assert.That(region.ModEnv.SustainLevel, Is.EqualTo(1f),
+                "absent SustainModulationEnvelope (0 units) must map to full level.");
+        }
+
+        [Test]
+        [Description("AttackModulationEnvelope(26)=0 timecents maps to a 1-second attack (2^0), independent of the volume envelope.")]
+        public void TryResolve_AttackModEnvZeroTimecents_MapsToOneSecond() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.AttackModulationEnvelope, 0));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnv.AttackSeconds, Is.EqualTo(1f).Within(1e-4f),
+                "0 timecents must map to 2^0 = 1 second.");
+        }
+
+        [Test]
+        [Description("SustainModulationEnvelope(29)=250 (0.1%-units) maps to a unipolar level of 1 - 250/1000 = 0.75, " +
+                     "distinct from the volume envelope's centibel-attenuation sustain conversion.")]
+        public void TryResolve_SustainModEnv250Units_MapsToUnipolarLevel() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SustainModulationEnvelope, 250));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnv.SustainLevel, Is.EqualTo(0.75f).Within(1e-4f),
+                "250 (0.1%-units) must map to 1 - 250/1000 = 0.75.");
+        }
+
+        [Test]
+        [Description("SustainModulationEnvelope(29) at or beyond 1000 units clamps to a zero sustain level.")]
+        public void TryResolve_SustainModEnvBeyondMax_ClampsToZero() {
+            Sf2Zone zone = InstrumentZone(0, 127, Gen(Sf2GeneratorType.SustainModulationEnvelope, 2000));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnv.SustainLevel, Is.EqualTo(0f),
+                "2000 (0.1%-units), beyond the 1000 max, must clamp to a zero sustain level.");
+        }
+
+        [Test]
+        [Description("HoldModulationEnvelope(27) and DecayModulationEnvelope(28) are exposed as raw effective " +
+                     "timecents on the region (not yet converted to seconds), since they need per-note keynum " +
+                     "resolution (gens 31/32) at StartVoice — see design §6 step 4.")]
+        public void TryResolve_HoldAndDecayModEnv_ExposedAsRawTimecents() {
+            Sf2Zone zone = InstrumentZone(0, 127,
+                Gen(Sf2GeneratorType.HoldModulationEnvelope, 300),
+                Gen(Sf2GeneratorType.DecayModulationEnvelope, 600));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnvHoldTimecents, Is.EqualTo(300f));
+            Assert.That(region.ModEnvDecayTimecents, Is.EqualTo(600f));
+        }
+
+        [Test]
+        [Description("KeyNumberToModulationEnvelopeHold(31) and KeyNumberToModulationEnvelopeDecay(32) are exposed " +
+                     "as raw keynum coefficients on the region, resolved per note (not per region) since the " +
+                     "cached region is key-independent.")]
+        public void TryResolve_KeynumToModEnvCoefficients_ExposedOnRegion() {
+            Sf2Zone zone = InstrumentZone(0, 127,
+                Gen(Sf2GeneratorType.KeyNumberToModulationEnvelopeHold, unchecked((ushort)(short)-50)),
+                Gen(Sf2GeneratorType.KeyNumberToModulationEnvelopeDecay, unchecked((ushort)(short)-80)));
+            (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(PresetZoneWithInstrument(), new[] { zone });
+
+            bool found = resolver.TryResolve(60, 100, out SampleRegion? region, out _);
+
+            Assert.That(found, Is.True);
+            Assert.That(region!.ModEnvHoldKeynumCents, Is.EqualTo(-50f));
+            Assert.That(region.ModEnvDecayKeynumCents, Is.EqualTo(-80f));
+        }
+
+        [Test]
         [Description("Absent mod-LFO generators yield the SF2 default frequency (8.176 Hz) and zero pitch depth (inert).")]
         public void TryResolve_NoLfoGenerators_YieldsSf2DefaultsAndZeroDepth() {
             (Sf2RegionResolver resolver, Sf2SampleData _) = BuildResolver(

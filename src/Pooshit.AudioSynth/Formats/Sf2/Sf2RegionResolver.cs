@@ -6,12 +6,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
 
     /// <summary>
     /// Resolves a MIDI (key, velocity) pair through the SF2 two-level zone model to a
-    /// <see cref="SampleRegion"/> (<see cref="TryResolve"/>, single first-covering-zone match) or to every
-    /// covering zone at once (<see cref="ResolveAll"/>, the full preset-zone × instrument-zone cartesian
-    /// for zone/layer stacking). Every "value" generator (filter, LFO, pan, sends, tuning, envelope
-    /// times/sustain, InitialAttenuation) resolves as instrument-effective + preset-additive via
-    /// <see cref="EffectiveValue"/>. Resolution never throws on the note path; a structurally-invalid zone
-    /// degrades to no-match instead.
+    /// <see cref="SampleRegion"/> (<see cref="TryResolve"/>) or every covering zone at once
+    /// (<see cref="ResolveAll"/>, for zone/layer stacking). Builds filter, LFO, and modulation-envelope
+    /// descriptors via the general instrument-effective + preset-additive <see cref="EffectiveValue"/> combiner.
+    /// Never throws on the note path; an invalid zone degrades to no-match.
     /// </summary>
     public sealed class Sf2RegionResolver {
 
@@ -33,6 +31,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         const float MaxLfoFrequencyHz = 20f;
         const int MaxLfoVolumeDepthCentibels = 960;
         const int MaxLfoFilterDepthCents = 12000;
+        const int MaxModEnvFilterDepthCents = 12000;
+        const int MaxModEnvSustainUnits = 1000;
         const int MaxPanUnits = 500;
         const float PanUnitsDivisor = 500f;
         const int MaxReverbSendUnits = 1000;
@@ -318,6 +318,8 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             float chorusSend = BuildChorusSend(zone, globalZone, presetZone, presetGlobalZone);
             int exclusiveClass = GetEffectiveRaw(zone, globalZone, Sf2GeneratorType.ExclusiveClass, defaultValue: 0);
             float initialAttenuationGain = BuildInitialAttenuationGain(zone, globalZone, presetZone, presetGlobalZone);
+            (ModulationEnvelopeParameters modEnv, float modEnvHoldTc, float modEnvDecayTc, float modEnvHoldKeyC, float modEnvDecayKeyC) =
+                BuildModEnvParameters(zone, globalZone, presetZone, presetGlobalZone);
 
             return new SampleRegion(
                 floatPool,
@@ -336,7 +338,12 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
                 reverbSend,
                 chorusSend,
                 exclusiveClass,
-                initialAttenuationGain);
+                initialAttenuationGain,
+                modEnv,
+                modEnvHoldTc,
+                modEnvDecayTc,
+                modEnvHoldKeyC,
+                modEnvDecayKeyC);
         }
 
         /// <summary>
@@ -433,20 +440,70 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
         }
 
         /// <summary>
-        /// Builds the static filter descriptor from gen-8 (cutoff) and gen-9 (Q), each combined via
-        /// <see cref="EffectiveValue"/> so a preset-level filter generator reaches the region.
-        /// gen-11 (ModulationEnvelopeToFilterCutoffFrequency) is not read here; it requires the
-        /// modulation envelope, not yet implemented.
+        /// Builds the static filter descriptor from gen-8 (cutoff), gen-9 (Q), and gen-11 (mod-envelope-to-
+        /// cutoff depth), each combined via <see cref="EffectiveValue"/> so a preset-level filter generator
+        /// reaches the region. The base cutoff is never collapsed to an open decision here — the effective
+        /// (base + LFO + mod-env) cutoff is what decides open-vs-filtered, per control tick, in
+        /// <see cref="Pooshit.AudioSynth.Synthesis.Voices.SamplePlaybackVoice"/>.
         /// </summary>
         static FilterParameters BuildFilterParameters(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
             int cutoffCents = EffectiveValue(
                 zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.InitialFilterCutoffFrequency, DefaultFilterCutoffCents);
             int resonanceCentibels = EffectiveValue(
                 zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.InitialFilterQ, instrumentDefault: 0);
+            int modEnvToCutoffCents = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ModulationEnvelopeToFilterCutoffFrequency, instrumentDefault: 0);
+            if (modEnvToCutoffCents > MaxModEnvFilterDepthCents)
+                modEnvToCutoffCents = MaxModEnvFilterDepthCents;
+            if (modEnvToCutoffCents < -MaxModEnvFilterDepthCents)
+                modEnvToCutoffCents = -MaxModEnvFilterDepthCents;
 
             float cutoffHz = FilterCutoffCentsToHz(cutoffCents);
             float resonance = FilterCentibelsToResonance(resonanceCentibels);
-            return new FilterParameters(cutoffHz, resonance);
+            return new FilterParameters(cutoffHz, resonance, modEnvToCutoffCents);
+        }
+
+        /// <summary>
+        /// Builds the modulation-envelope descriptor from gens 25/26/29/30 (delay/attack/sustain/release,
+        /// key-independent) plus the raw gen-27/28 hold/decay timecents and gen-31/32 keynum coefficients,
+        /// which <see cref="Pooshit.AudioSynth.Synthesis.Patches.SamplePatch.StartVoice"/> re-resolves per played key.
+        /// </summary>
+        static (ModulationEnvelopeParameters modEnv, float holdTimecents, float decayTimecents, float holdKeynumCents, float decayKeynumCents)
+            BuildModEnvParameters(Sf2Zone zone, Sf2Zone? globalZone, Sf2Zone presetZone, Sf2Zone? presetGlobalZone) {
+            float delay = TimecentsToSeconds(
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.DelayModulationEnvelope, DefaultEnvelopeTimecents));
+            float attack = TimecentsToSeconds(
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.AttackModulationEnvelope, DefaultEnvelopeTimecents));
+            float release = TimecentsToSeconds(
+                EffectiveValue(zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.ReleaseModulationEnvelope, DefaultEnvelopeTimecents));
+            int sustainRaw = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.SustainModulationEnvelope, instrumentDefault: 0);
+            float sustainLevel = ModEnvSustainUnitsToLevel(sustainRaw);
+            int holdTimecents = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.HoldModulationEnvelope, DefaultEnvelopeTimecents);
+            int decayTimecents = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.DecayModulationEnvelope, DefaultEnvelopeTimecents);
+            int holdKeynumCents = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.KeyNumberToModulationEnvelopeHold, instrumentDefault: 0);
+            int decayKeynumCents = EffectiveValue(
+                zone, globalZone, presetZone, presetGlobalZone, Sf2GeneratorType.KeyNumberToModulationEnvelopeDecay, instrumentDefault: 0);
+
+            ModulationEnvelopeParameters modEnv = new ModulationEnvelopeParameters(
+                delay, attack, TimecentsToSeconds(holdTimecents), TimecentsToSeconds(decayTimecents), sustainLevel, release);
+            return (modEnv, holdTimecents, decayTimecents, holdKeynumCents, decayKeynumCents);
+        }
+
+        /// <summary>
+        /// Converts gen-29 (0.1%-units, a decrease from full) to the unipolar sustain level consumed by
+        /// <see cref="ModulationEnvelope"/>: <c>1 - units/1000</c>, distinct from the volume envelope's
+        /// centibel-attenuation sustain (<see cref="CentibelsToLinear"/>).
+        /// </summary>
+        static float ModEnvSustainUnitsToLevel(int tenthPercentUnits) {
+            if (tenthPercentUnits <= 0)
+                return 1f;
+            if (tenthPercentUnits >= MaxModEnvSustainUnits)
+                return 0f;
+            return 1f - tenthPercentUnits / (float)MaxModEnvSustainUnits;
         }
 
         static float FilterCutoffCentsToHz(int cents) {

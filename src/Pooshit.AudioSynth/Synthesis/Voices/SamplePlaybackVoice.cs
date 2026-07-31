@@ -3,29 +3,11 @@ using System;
 namespace Pooshit.AudioSynth.Synthesis.Voices {
 
     /// <summary>
-    /// <see cref="IVoice"/> that reads a mono <see cref="SampleRegion"/> at a pitch-derived increment
-    /// with linear interpolation and renders a mono block.  Each interpolated sample passes through the
-    /// region's resonant <see cref="BiquadLowPassFilter"/> (the timbre-shaping stage) before being scaled
-    /// by the product of the region's DAHDSR <see cref="AmplitudeEnvelope"/> (the note's amplitude
-    /// contour, which owns the click-free onset and the note-off release fade) and a <see cref="GainRamp"/>
-    /// (the zipper-free slew of the velocity-derived scalar gain).  The filter sits before the amplifier,
-    /// realising the SF2 signal chain oscillator → low-pass filter → amplifier.  Supports no-loop one-shot
-    /// and continuous looping.  The region's <see cref="ModulationLfo"/> re-evaluates every
-    /// <see cref="ControlRateFrames"/> frames and steps the read-position increment's slope (vibrato);
-    /// held-then-stepped is exactly how the increment already behaved before the LFO, so a tick never
-    /// introduces an amplitude discontinuity (INV-1 by construction) and zero pitch depth reproduces the
-    /// pre-LFO increment bit-for-bit.  Tremolo (LFO to volume) glides its multiplier linearly across each
-    /// control block, since a stepped gain multiplier would itself be an audible click; filter-sweep (LFO
-    /// to cutoff) re-targets the biquad at the control rate via <see cref="BiquadLowPassFilter.SetCutoff"/>,
-    /// which is click-free by construction (state is preserved across the retarget).  Zero depth on all
-    /// three routings reproduces the pre-LFO render bit-for-bit.  <see cref="SetPitchBend"/> folds a
-    /// channel-driven pitch-bend ratio into the same control-tick increment recompute; a centered bend
-    /// (1.0) reproduces the pre-bend increment bit-for-bit.  <see cref="SetModWheel"/> drives a second,
-    /// dedicated <see cref="ModulationLfo"/> — independent of the region's own LFO and its bypass —
-    /// whose output is scaled by <see cref="MaxModWheelVibratoCents"/> and the live mod-wheel amount and
-    /// folded into the same control-tick increment recompute; the mod-wheel LFO advances only while the
-    /// amount is non-zero, so a channel that never sends CC1 reproduces the pre-mod-wheel increment
-    /// bit-for-bit.
+    /// <see cref="IVoice"/> that reads a mono <see cref="SampleRegion"/> at a pitch-derived increment with
+    /// linear interpolation and renders a mono block, applying the region's <see cref="BiquadLowPassFilter"/>
+    /// then its <see cref="AmplitudeEnvelope"/> and a <see cref="GainRamp"/>. Each control tick recomputes
+    /// pitch (LFO, pitch-bend, mod-wheel) and the effective filter cutoff (base + LFO + mod-envelope,
+    /// combined in cents); zero depth on every routing reproduces the pre-feature render bit-for-bit.
     /// </summary>
     public sealed class SamplePlaybackVoice : IVoice {
 
@@ -37,11 +19,14 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         /// </summary>
         const float MaxModWheelVibratoCents = 50f;
 
+        const float CutoffEpsilonCents = 0.5f;
+
         readonly SampleRegion region;
         readonly float pitchIncrement;
-        readonly float baseCutoffHz;
+        readonly float baseCutoffCents;
         GainRamp gainRamp;
         AmplitudeEnvelope envelope;
+        ModulationEnvelope modEnv;
         BiquadLowPassFilter filter;
         ModulationLfo lfo;
         ModulationLfo modWheelLfo;
@@ -50,6 +35,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         float modWheelAmount;
         float tremoloCurrent;
         float tremoloStep;
+        float lastAppliedCutoffCents;
         float frameGain;
         int controlTicksRemaining;
         double readPos;
@@ -59,19 +45,42 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         bool stealing;
 
         /// <summary>
-        /// Creates a <see cref="SamplePlaybackVoice"/>.
+        /// Creates a <see cref="SamplePlaybackVoice"/> using the region's own (key/velocity-independent)
+        /// base cutoff and modulation-envelope parameters. Used by hand-built patches and tests that do not
+        /// resolve per-note filter/mod-envelope values; <see cref="Patches.SamplePatch.StartVoice"/> uses
+        /// the other constructor instead, since it always resolves both per note.
         /// </summary>
         /// <param name="region">the sample region to play</param>
         /// <param name="pitchIncrement">fractional read-position advance per output frame</param>
         /// <param name="targetGain">velocity-derived gain target the ramp converges toward from zero</param>
         /// <param name="outputSampleRate">engine output sample rate; determines the gain-ramp slew speed</param>
-        public SamplePlaybackVoice(SampleRegion region, float pitchIncrement, float targetGain, int outputSampleRate) {
+        public SamplePlaybackVoice(SampleRegion region, float pitchIncrement, float targetGain, int outputSampleRate)
+            : this(region, pitchIncrement, targetGain, outputSampleRate,
+                  (region ?? throw new ArgumentNullException(nameof(region))).Filter.BaseCutoffCents,
+                  (region ?? throw new ArgumentNullException(nameof(region))).ModEnv) {
+        }
+
+        /// <summary>
+        /// Creates a <see cref="SamplePlaybackVoice"/> with the per-note-resolved base cutoff (region base
+        /// plus the velocity-to-filter-cutoff offset, SF2 §8.4.2) and modulation-envelope parameters (hold/decay
+        /// resolved for the played key), as produced by <see cref="Patches.SamplePatch.StartVoice"/>.
+        /// </summary>
+        /// <param name="region">the sample region to play</param>
+        /// <param name="pitchIncrement">fractional read-position advance per output frame</param>
+        /// <param name="targetGain">velocity-derived gain target the ramp converges toward from zero</param>
+        /// <param name="outputSampleRate">engine output sample rate; determines the gain-ramp slew speed</param>
+        /// <param name="effectiveBaseCutoffCents">per-note base cutoff in absolute cents (region base + velocity offset)</param>
+        /// <param name="modEnvParameters">per-note modulation-envelope parameters (hold/decay resolved for the played key)</param>
+        public SamplePlaybackVoice(
+            SampleRegion region, float pitchIncrement, float targetGain, int outputSampleRate,
+            float effectiveBaseCutoffCents, ModulationEnvelopeParameters modEnvParameters) {
             this.region = region ?? throw new ArgumentNullException(nameof(region));
             this.pitchIncrement = pitchIncrement;
-            baseCutoffHz = region.Filter.CutoffHz;
+            baseCutoffCents = effectiveBaseCutoffCents;
             gainRamp = new GainRamp(outputSampleRate);
             gainRamp.SetTarget(targetGain);
             envelope = new AmplitudeEnvelope(region.Envelope, outputSampleRate);
+            modEnv = new ModulationEnvelope(modEnvParameters, outputSampleRate);
             filter = new BiquadLowPassFilter(region.Filter, outputSampleRate);
             lfo = new ModulationLfo(region.Lfo, outputSampleRate);
             modWheelLfo = new ModulationLfo(
@@ -82,6 +91,8 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
             modWheelAmount = 0f;
             tremoloCurrent = 1f;
             tremoloStep = 0f;
+            // Region's own base, not effectiveBaseCutoffCents, so an unchanged tick 0 skips SetCutoff entirely.
+            lastAppliedCutoffCents = region.Filter.BaseCutoffCents;
             frameGain = 0f;
             controlTicksRemaining = 0;
             readPos = region.Start;
@@ -98,6 +109,7 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
         public void Release() {
             released = true;
             envelope.Release();
+            modEnv.Release();
         }
 
         /// <inheritdoc/>
@@ -164,9 +176,13 @@ namespace Pooshit.AudioSynth.Synthesis.Voices {
                         tremoloCurrent = 1f;
                     }
 
-                    if (region.Lfo.FilterDepthCents != 0f) {
-                        float effectiveCutoff = baseCutoffHz * (float)Math.Pow(2.0, lfoValue * region.Lfo.FilterDepthCents / 1200.0);
-                        filter.SetCutoff(effectiveCutoff);
+                    float modEnvValue = modEnv.Advance(ControlRateFrames);
+                    float effectiveCutoffCents = baseCutoffCents
+                        + lfoValue * region.Lfo.FilterDepthCents
+                        + modEnvValue * region.Filter.ModEnvToCutoffCents;
+                    if (Math.Abs(effectiveCutoffCents - lastAppliedCutoffCents) >= CutoffEpsilonCents) {
+                        filter.SetCutoff(FilterParameters.CentsToHz(effectiveCutoffCents));
+                        lastAppliedCutoffCents = effectiveCutoffCents;
                     }
 
                     controlTicksRemaining = ControlRateFrames;
