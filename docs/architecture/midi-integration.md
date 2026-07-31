@@ -5,6 +5,36 @@
 **Load-bearing contracts:** Code Contracts #114 (§0 KISS/DRY/YAGNI, §1 one-type-per-file, §4 comments/bicameral), Design Contracts #1136 (§1–§4, §5 checklist). PR-shape #1165 (design + implementation in ONE PR).
 **DiVoid copy:** documentation node linked to #7095 + #6128 (this repo file is the authoritative wording).
 
+---
+
+## STATUS (current — as of PR #38, real-time sequencer core)
+
+**Implemented: full MIDI song playback, both offline and real-time.** The gap this document was
+written to close — "there is no component that plays a song" — is closed, and has since been
+generalized well past increment 1's single-instrument baseline. The engine now does:
+
+- **Offline render** — `MidiSequencer.Render(sequence, synthesizer, sink, soundBank)` renders a full
+  GM MIDI song (multi-timbral, mixed, expressive — PRs 11–27) to any `IAudioSink` (e.g. `WavFileSink`).
+- **Real-time, pull-driven, loopable playback** — `RealtimeSequencer : IAudioSource` (PR #38, DiVoid
+  design #7362) dispatches a compiled timeline sample-accurately on demand, with optional loop-region
+  support (`loopStart`/`loopEnd`, a pure cursor jump) — game-engine-ready (e.g. Godot
+  `AudioStreamGenerator`).
+- **One shared dispatch core, not two.** GM decode (bank-select, RPN, CC7×CC11 gain, pan, pitch-bend,
+  sustain, reverb/chorus sends, channel-mode controllers — everything documented in DiVoid #7114) now
+  lives in `MidiTimelineImporter`, which populates an editable, MIDI-neutral `Timeline` of
+  `NeutralEvent`s (`src/Pooshit.AudioSynth/Sequencing/Timeline/`). `RealtimeSequencer` dispatches that
+  timeline; `MidiSequencer.Render` sits on top of the same driver rather than duplicating GM logic.
+  Proven bit-identical to the real-time path across block sizes {64, 512, 1000, 4096}.
+
+See `docs/usage.md` for consumer-facing usage (offline + real-time + a Godot sketch) and DiVoid
+#7114 / #7362 for the full design history. **The body of this document below is the historical PR-10
+design record** (parser + first offline driver, increment 1, single-instrument baseline) — preserved
+for context, but its "cannot yet play a song" framing (§1) and its PR 11–14 roadmap (§12) are
+superseded by the above. Treat `docs/architecture/audiosynth-rewrite.md`'s STATUS note and this
+section as the current state, not the body below.
+
+---
+
 > This is **PR 10** on the roadmap. It folds the user's legacy MIDI library (`C:\dev\claude\Midi`,
 > assembly `NightlyCode.Midi`) into `Pooshit.AudioSynth` as one library, refactored to this project's
 > contracts, and adds the **sequencer→synth driver** that renders a real MIDI song to WAV. This is the
@@ -17,6 +47,11 @@
 ## 1. Problem Statement
 
 The synth can render one note from one SF2 patch (`Synthesizer` + `OfflineRenderer`, proven by the first-audio milestone). It cannot yet play a **song**: there is no component that reads a `.mid` file, converts its tick-based events into a wall-clock timeline, and drives `ISynthesizer.NoteOn`/`NoteOff` at the right moments. The user already owns a small, clean MIDI library that does the parsing and the ticks→seconds conversion; the natural move is to fold it in (not fragment into a second package) and add the missing glue — the driver.
+
+> **[SUPERSEDED — see the STATUS section at the top of this document.]** This gap was closed by this
+> PR (offline, single-instrument) and generalized by PR #38 into full offline **and** real-time
+> playback on one MIDI-neutral core. The problem statement below is preserved as history, not current
+> state.
 
 **Success criteria:**
 1. A real multi-track `.mid` (e.g. `07dkc2bram.mid` or a Final Fantasy VIII track) loaded, parsed, and rendered through a real SF2 to a `.wav` whose notes and timing match the song (single-instrument in inc.1 — expected to "sound like all one instrument", the baseline we improve from).

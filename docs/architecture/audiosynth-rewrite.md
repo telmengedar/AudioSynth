@@ -5,6 +5,31 @@
 **Load-bearing contracts:** Design Contracts #1136 (KISS/DRY/YAGNI + Pre-Design Checklist) and Code Contracts #114 §0.
 **Reference inputs:** legacy map root #6131 (concepts #6268–#6271), defect catalog #6272, legacy tree `C:\dev\claude\AudioSynth\Source` (reference only, not imported).
 
+---
+
+## STATUS (current — as of PR #38, real-time sequencer core)
+
+**Real-time playback is implemented — Open Question 1 below is resolved.** `RealtimeSequencer :
+IAudioSource` (PR #38, DiVoid design #7362) is the real-time pull driver: it runs directly on the
+central pull seam this document establishes (§4, §10 Decision 2) — no engine change was needed. It
+dispatches a compiled, MIDI-neutral `Timeline` (populated by `MidiTimelineImporter`, which now owns
+the GM decode this document had not yet designed) sample-accurately per `Read` call, with optional
+loop-region support, and is proven bit-identical to the offline render path across block sizes
+{64, 512, 1000, 4096}. Offline (`MidiSequencer.Render`) now sits on top of the same driver rather than
+maintaining a second dispatch path.
+
+**Still not built (genuinely future/optional, unchanged from this document's scope):** a NAudio (or
+other live-device) adapter that consumes `RealtimeSequencer`/`ISynthesizer` as a Windows audio output
+— the core real-time *pull* path exists and is proven; only the "wrap it for a live device callback"
+adapter named in §2/§14 is still a separate, optional future PR. A consumer such as Godot does not
+need that adapter at all — it pulls `RealtimeSequencer.Read` directly (see `docs/usage.md`).
+
+See DiVoid #7362 for the real-time design and #7114 for the GM feature history. The rest of this
+document is preserved as the original rewrite design; its increment-1 scope table (§2) and roadmap
+(§14) are historical — read them as "as originally planned," not as the current gap list.
+
+---
+
 > This document governs the whole rewrite. Increment 1 (the scaffold that ships with this doc)
 > implements only the central pull seam; every other component named here is a **future PR**,
 > enumerated in §14. The "What does NOT go in" list (§2) is the YAGNI boundary for increment 1.
@@ -279,6 +304,10 @@ catalog accretes into the regression suite as each DSP component lands.
 1. **Real-time priority for v1:** is live playback in scope for v1, or is offline WAV render the
    only v1 delivery (deferring the NAudio adapter + threading model)? The seam supports both; this
    only sets which driver PR comes first.
+   **STATUS: resolved by PR #38 — live playback is in scope and built.** `RealtimeSequencer` is the
+   real-time driver (see the STATUS note at the top of this document); it did not need or wait on a
+   NAudio adapter, since consumers can pull it directly. The NAudio adapter question itself remains
+   open only in the narrow sense that no such adapter has been written — it is not blocking anything.
 2. **Default polyphony / block size:** the legacy used a 64-frame block and a fixed voice pool. Keep
    64, or revisit for the modern SIMD width? Non-blocking; a `const` decision at engine-PR time.
 3. **WAV sink in v1:** is a `WavFileSink` wanted in v1 (natural first real sink), or is
