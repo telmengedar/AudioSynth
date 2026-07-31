@@ -5,10 +5,20 @@ SoundFont/MIDI synth engine built around a sample-rate-agnostic, pull-based audi
 
 ## Status
 
-Early scaffold. The central seam (a pull-based `IAudioSource` driven by an offline
-renderer or a real-time sink) is in place and proven end to end by tests. Sound-bank
-loading (SF2), the voice engine, and effects are not yet implemented — see
-`docs/architecture/audiosynth-rewrite.md` for the full design and the roadmap.
+A working GM MIDI synthesizer core. It loads SoundFont 2 (`.sf2`) sound banks and plays full
+General MIDI songs — with program/bank routing, volume/expression, pan, pitch-bend (+ RPN bend
+range), modulation, sustain pedal, reverb/chorus sends, and voice-stealing — both:
+
+- **offline**, rendering a whole song to a `.wav` file or any `IAudioSink`, and
+- **real-time**, as a pull-driven, loopable `IAudioSource` (`RealtimeSequencer`) suitable for
+  feeding a live game-engine audio buffer (e.g. Godot's `AudioStreamGenerator`).
+
+Both paths share one MIDI-neutral dispatch core (`MidiTimelineImporter` → `Timeline` →
+`RealtimeSequencer`) and are proven bit-identical for the same MIDI + SF2 input. See
+[`docs/usage.md`](docs/usage.md) for consumer-facing usage with runnable snippets (offline render,
+real-time playback, and a Godot integration sketch), and `docs/architecture/` for the design history
+(`audiosynth-rewrite.md` for the core engine, `midi-integration.md` for the MIDI/sequencer layer —
+both carry STATUS notes marking what has since shipped).
 
 ## Targets
 
