@@ -28,6 +28,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         public const int DefaultMaxVoices = 32;
 
         /// <summary>
+        /// Default master output gain (unity; matches pre-existing output exactly).
+        /// </summary>
+        public const float DefaultMasterGain = 1.0f;
+
+        /// <summary>
         /// Creates a <see cref="SynthesizerOptions"/> with the supplied values, validating each one.
         /// </summary>
         /// <param name="sampleRate">frames per second; must be positive</param>
@@ -46,6 +51,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// (CC93 + SF2 gen-15, additive); <c>true</c> routes chorus as a uniform master insert where every
         /// voice sends fully, mirroring <paramref name="globalReverb"/>
         /// </param>
+        /// <param name="masterGain">
+        /// scalar applied to the summed master bus before the soft-clip stage (mirrors FluidSynth's
+        /// <c>synth.gain</c>); must be non-negative and non-NaN; defaults to unity, which reproduces the
+        /// pre-existing output exactly
+        /// </param>
         public SynthesizerOptions(
             int sampleRate = DefaultSampleRate,
             int channels = DefaultChannels,
@@ -54,7 +64,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             ReverbSettings? reverb = null,
             bool globalReverb = false,
             ChorusSettings? chorus = null,
-            bool globalChorus = false) {
+            bool globalChorus = false,
+            float masterGain = DefaultMasterGain) {
             if (sampleRate <= 0)
                 throw new ArgumentOutOfRangeException(nameof(sampleRate), sampleRate, "Sample rate must be positive.");
             if (channels <= 0)
@@ -63,6 +74,8 @@ namespace Pooshit.AudioSynth.Synthesis {
                 throw new ArgumentOutOfRangeException(nameof(blockFrames), blockFrames, "Block frames must be positive.");
             if (maxVoices <= 0)
                 throw new ArgumentOutOfRangeException(nameof(maxVoices), maxVoices, "Max voices must be positive.");
+            if (float.IsNaN(masterGain) || masterGain < 0f)
+                throw new ArgumentOutOfRangeException(nameof(masterGain), masterGain, "Master gain must be non-negative and non-NaN.");
             SampleRate = sampleRate;
             Channels = channels;
             BlockFrames = blockFrames;
@@ -71,6 +84,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             GlobalReverb = globalReverb;
             Chorus = chorus;
             GlobalChorus = globalChorus;
+            MasterGain = masterGain;
         }
 
         /// <summary>
@@ -123,5 +137,11 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// when <see cref="Chorus"/> is configured and <see cref="Channels"/> is 2 (stereo).
         /// </summary>
         public bool GlobalChorus { get; }
+
+        /// <summary>
+        /// Master output gain applied to the summed master bus before the soft-clip stage; unity (1.0)
+        /// reproduces the pre-existing output exactly.
+        /// </summary>
+        public float MasterGain { get; }
     }
 }

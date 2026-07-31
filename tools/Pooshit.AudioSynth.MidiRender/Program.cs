@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using Pooshit.AudioSynth.Audio;
 using Pooshit.AudioSynth.Audio.Sinks;
@@ -9,24 +11,37 @@ using Pooshit.AudioSynth.Sequencing;
 using Pooshit.AudioSynth.Synthesis;
 
 const int MaxVoicesForSongRender = 128;
+const string UsageSuffix = "Usage: MidiRender <song.mid> <soundfont.sf2> <out.wav> [--gain <f>]";
 
-string? songPath = args.Length > 0 ? args[0] : FindDefaultAsset("Midi", "07dkc2bram.mid");
+List<string> positionalArgs = new List<string>();
+float masterGain = SynthesizerOptions.DefaultMasterGain;
+for (int i = 0; i < args.Length; i++) {
+    if (args[i] != "--gain") {
+        positionalArgs.Add(args[i]);
+        continue;
+    }
+    if (i + 1 >= args.Length || !float.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out masterGain)) {
+        Console.Error.WriteLine($"--gain requires a numeric value. {UsageSuffix}");
+        return 1;
+    }
+    i++;
+}
+
+string? songPath = positionalArgs.Count > 0 ? positionalArgs[0] : FindDefaultAsset("Midi", "07dkc2bram.mid");
 if (songPath is null || !File.Exists(songPath)) {
     Console.Error.WriteLine(
-        "No MIDI song supplied and no default song was found in the dev tree. " +
-        "Usage: MidiRender <song.mid> <soundfont.sf2> <out.wav>");
+        $"No MIDI song supplied and no default song was found in the dev tree. {UsageSuffix}");
     return 1;
 }
 
-string? soundfontPath = args.Length > 1 ? args[1] : FindDefaultAsset("Soundfonts", "__Florestan_Basic_GM_GS.sf2");
+string? soundfontPath = positionalArgs.Count > 1 ? positionalArgs[1] : FindDefaultAsset("Soundfonts", "__Florestan_Basic_GM_GS.sf2");
 if (soundfontPath is null || !File.Exists(soundfontPath)) {
     Console.Error.WriteLine(
-        "No SoundFont supplied and the default Florestan test SoundFont was not found in the dev tree. " +
-        "Usage: MidiRender <song.mid> <soundfont.sf2> <out.wav>");
+        $"No SoundFont supplied and the default Florestan test SoundFont was not found in the dev tree. {UsageSuffix}");
     return 1;
 }
 
-string outputPath = args.Length > 2 ? args[2] : "midirender.wav";
+string outputPath = positionalArgs.Count > 2 ? positionalArgs[2] : "midirender.wav";
 
 AudioFormat format = new AudioFormat(SynthesizerOptions.DefaultSampleRate, SynthesizerOptions.DefaultChannels);
 
@@ -47,7 +62,7 @@ using (FileStream songStream = File.OpenRead(songPath))
 TimedMessageSequence sequence = new TimedMessageSequence(midiFile);
 SynthesizerOptions options = new SynthesizerOptions(
     format.SampleRate, format.Channels, SynthesizerOptions.DefaultBlockFrames, MaxVoicesForSongRender,
-    ReverbSettings.Default, globalReverb: false, chorus: ChorusSettings.Default);
+    ReverbSettings.Default, globalReverb: false, chorus: ChorusSettings.Default, masterGain: masterGain);
 Synthesizer synthesizer = new Synthesizer(options, bank.GetPatch(0, 0));
 
 long frames;
