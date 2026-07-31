@@ -60,6 +60,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// <param name="modEnvDecayTimecents">raw effective mod-envelope decay time (SF2 gen-28, timecents) before keynum scaling</param>
         /// <param name="modEnvHoldKeynumCents">keynum-to-mod-envelope-hold coefficient (SF2 gen-31, timecents/key)</param>
         /// <param name="modEnvDecayKeynumCents">keynum-to-mod-envelope-decay coefficient (SF2 gen-32, timecents/key)</param>
+        /// <param name="modEnvToPitchCents">peak pitch deviation in cents at full modulation-envelope excursion (SF2 gen-7); 0 is inert</param>
         public SampleRegion(
             float[] buffer,
             int start,
@@ -82,7 +83,8 @@ namespace Pooshit.AudioSynth.Synthesis {
             float modEnvHoldTimecents = -12000f,
             float modEnvDecayTimecents = -12000f,
             float modEnvHoldKeynumCents = 0f,
-            float modEnvDecayKeynumCents = 0f) {
+            float modEnvDecayKeynumCents = 0f,
+            float modEnvToPitchCents = 0f) {
             if (buffer is null)
                 throw new ArgumentNullException(nameof(buffer));
             if (start < 0 || start >= buffer.Length)
@@ -121,6 +123,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             ModEnvDecayTimecents = modEnvDecayTimecents;
             ModEnvHoldKeynumCents = modEnvHoldKeynumCents;
             ModEnvDecayKeynumCents = modEnvDecayKeynumCents;
+            ModEnvToPitchCents = modEnvToPitchCents;
         }
 
         /// <summary>
@@ -234,5 +237,8 @@ namespace Pooshit.AudioSynth.Synthesis {
 
         /// <summary>Keynum-to-mod-envelope-decay coefficient (SF2 gen-32, timecents/key).</summary>
         public float ModEnvDecayKeynumCents { get; }
+
+        /// <summary>Peak pitch deviation, in cents, at full modulation-envelope excursion (SF2 gen-7); zero is inert.</summary>
+        public float ModEnvToPitchCents { get; }
     }
 }
