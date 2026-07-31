@@ -11,8 +11,26 @@
     <AssemblyName>Pooshit.AudioSynth</AssemblyName>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <Version>0.1.0-preview</Version>
+    <Title>Pooshit.AudioSynth</Title>
+    <PackageId>Pooshit.AudioSynth</PackageId>
+    <Authors>Toni Gottschall</Authors>
+    <Company />
+    <Description>A modern, cross-platform SoundFont 2 (SF2) / General MIDI software synthesizer for .NET. Offline rendering to WAV or any IAudioSink, plus real-time, pull-driven, loopable playback via IAudioSource (RealtimeSequencer) for live audio buffers such as Godot's AudioStreamGenerator.</Description>
+    <PackageTags>audio;synth;synthesizer;soundfont;sf2;midi;gm;dsp</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/telmengedar/AudioSynth</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/telmengedar/AudioSynth.git</RepositoryUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
     <PackageReference Include="System.Memory" Version="4.5.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>
