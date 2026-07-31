@@ -74,6 +74,11 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
         /// </summary>
         internal List<int> ReleaseAllNotesCalls { get; } = new List<int>();
 
+        /// <summary>
+        /// Every gain passed to <see cref="SetMasterGain"/>, in call order.
+        /// </summary>
+        internal List<float> MasterGainCalls { get; } = new List<float>();
+
         /// <inheritdoc/>
         public void SetChannelPatch(int channel, IPatch patch) => ChannelPatchCalls.Add((channel, patch));
 
@@ -103,6 +108,9 @@ namespace Pooshit.AudioSynth.Tests.Helpers {
 
         /// <inheritdoc/>
         public void ReleaseAllNotes(int channel) => ReleaseAllNotesCalls.Add(channel);
+
+        /// <inheritdoc/>
+        public void SetMasterGain(float gain) => MasterGainCalls.Add(gain);
 
         /// <inheritdoc/>
         public void NoteOn(int channel, int key, int velocity) => NoteOnCalls.Add((channel, key, velocity));

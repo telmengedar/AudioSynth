@@ -97,5 +97,13 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// occupied voices; other channels are untouched. MIDI-neutral: mirrors <see cref="NoteOff"/>.
         /// </summary>
         void ReleaseAllNotes(int channel);
+
+        /// <summary>
+        /// Sets the master output gain, a scalar applied to the summed master bus before the soft-clip
+        /// stage (mirrors FluidSynth's <c>synth.gain</c>). A configuration knob rather than a MIDI
+        /// control: takes effect on the next rendered block, stepped rather than glided. Must be
+        /// non-negative and non-NaN.
+        /// </summary>
+        void SetMasterGain(float gain);
     }
 }

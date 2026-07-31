@@ -60,6 +60,7 @@ namespace Pooshit.AudioSynth.Synthesis {
         readonly List<IVoice> layerVoiceBuffer;
         readonly List<int> layerSlotBuffer;
         int nextAge;
+        float masterGain;
 
         /// <summary>
         /// Creates a <see cref="Synthesizer"/> with the given options; <paramref name="defaultPatch"/> fills
@@ -104,6 +105,7 @@ namespace Pooshit.AudioSynth.Synthesis {
             chorusSendBus = perChannelChorus ? new float[options.BlockFrames * options.Channels] : Array.Empty<float>();
             layerVoiceBuffer = new List<IVoice>(4);
             layerSlotBuffer = new List<int>(4);
+            masterGain = options.MasterGain;
         }
 
         /// <inheritdoc/>
@@ -305,6 +307,13 @@ namespace Pooshit.AudioSynth.Synthesis {
                 if (slot.IsOccupied && slot.Channel == channel)
                     ReleaseSlot(ref slot, sustained);
             }
+        }
+
+        /// <inheritdoc/>
+        public void SetMasterGain(float gain) {
+            if (float.IsNaN(gain) || gain < 0f)
+                throw new ArgumentOutOfRangeException(nameof(gain), gain, "Master gain must be non-negative and non-NaN.");
+            masterGain = gain;
         }
 
         /// <summary>
@@ -639,10 +648,17 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         /// <summary>
-        /// Stateless per-sample soft-clip on the master bus, before <see cref="Finalize"/> (INV-2): unity
-        /// below the knee, <c>tanh</c>-saturating toward ±1 above it; NaN/Inf samples pass through untouched.
+        /// Applies <see cref="masterGain"/> to the master bus, then soft-clips it before <see cref="Finalize"/>
+        /// (INV-2): unity below the knee, <c>tanh</c>-saturating toward ±1 above it; NaN/Inf samples pass
+        /// through untouched. At unity gain the clip loop below runs byte-for-byte as before (the gain
+        /// multiply is skipped entirely rather than relying on a ×1f no-op).
         /// </summary>
-        static void ApplyMasterBus(Span<float> block) {
+        void ApplyMasterBus(Span<float> block) {
+            if (masterGain != 1f) {
+                for (int i = 0; i < block.Length; i++)
+                    block[i] *= masterGain;
+            }
+
             for (int i = 0; i < block.Length; i++) {
                 float x = block[i];
                 if (float.IsNaN(x) || float.IsInfinity(x))
