@@ -57,10 +57,11 @@ namespace Pooshit.AudioSynth.Sequencing {
                 if (orderIndex < 0 || orderIndex >= song.Patterns.Length)
                     continue;
                 Pattern pattern = song.Patterns[orderIndex];
-                if (pattern.Cells.Length < pattern.Rows * channelCount)
-                    throw new ArgumentException($"Pattern at order index {orderIndex} has {pattern.Cells.Length} cells; expected at least {pattern.Rows * channelCount} (Rows × ChannelCount).", nameof(song));
+                int rows = pattern.Rows ?? song.DefaultRows;
+                if (pattern.Cells.Length < rows * channelCount)
+                    throw new ArgumentException($"Pattern at order index {orderIndex} has {pattern.Cells.Length} cells; expected at least {rows * channelCount} (effective Rows × ChannelCount).", nameof(song));
 
-                for (int row = 0; row < pattern.Rows; row++) {
+                for (int row = 0; row < rows; row++) {
                     int rowBase = row * channelCount;
                     for (int channel = 0; channel < channelCount; channel++) {
                         Cell cell = pattern.Cells[rowBase + channel];

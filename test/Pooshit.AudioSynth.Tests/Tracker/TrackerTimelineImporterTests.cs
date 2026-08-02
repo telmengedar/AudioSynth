@@ -197,10 +197,22 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
         }
 
         [Test, Parallelizable]
-        [Description("A pattern whose flat grid is shorter than Rows × ChannelCount is rejected at import.")]
+        [Description("A null Rows falls back to Song.DefaultRows for both the row walk and the resulting offsets.")]
+        public void Import_NullRows_UsesSongDefaultRows() {
+            Song song = OneChannelSong(3, (0, Note(60, 1)), (1, Note(60, 1)), (2, Note(60, 1)));
+            song.Patterns[0].Rows = null;
+
+            long[] noteOnOffsets = OfKind(song, NeutralEventKind.NoteOn).Select(e => e.SampleOffset).ToArray();
+
+            Assert.That(noteOnOffsets, Is.EqualTo(new long[] { 0, 5292, 10584 }));
+        }
+
+        [Test, Parallelizable]
+        [Description("The grid-too-small guard measures against effective rows: null Rows resolves to Song.DefaultRows.")]
         public void Import_PatternGridTooSmall_Throws() {
             Song song = OneChannelSong(1);
-            song.Patterns[0].Rows = 4;
+            song.Patterns[0].Rows = null;
+            song.DefaultRows = 4;
 
             Assert.That(() => TrackerTimelineImporter.Import(song, SampleRate), Throws.ArgumentException);
         }

@@ -99,7 +99,7 @@ All flow is **synchronous, single-pass, allocation-light**, mirroring `MidiTimel
 1. **Validate & seed.** Assert `Song.ChannelCount ∈ [1,16]`. For each channel `c`, seed at offset 0: `SetGain(c, 1.0)` and `SetPan(c, 0.0)` — the channel init, mirroring the MIDI importer's offset-0 reset. **No** `SetPatch` is seeded (patch arrives with the first instrument-bearing note — CN-3).
 2. **Initialize the running clock.** `currentTempo = Song.DefaultBpm`, `currentSpeed = Song.DefaultSpeed`, `cursorSamples = 0.0` (double accumulator — see §9 for the anti-drift rationale).
 3. **Walk the order list.** For each `orderIndex` in `Song.Order`, resolve `pattern = Song.Patterns[orderIndex]`.
-4. **Walk rows.** For each row `r` in `[0, pattern.Rows)`:
+4. **Walk rows.** For each row `r` in `[0, effectiveRows)`, where `effectiveRows = pattern.Rows ?? Song.DefaultRows` (a `null` per-pattern row count falls back to the song default):
    a. **Timing pre-pass:** scan the row's channels (ascending) for `SetSpeed` / `SetTempo` effects and apply them to `currentSpeed` / `currentTempo` *before* the row's duration is computed (classic tracker semantics — the directive governs its own row).
    b. **Emit pass:** `long offset = round(cursorSamples)`. For each channel `c` in ascending order, interpret `pattern.Cells[r*ChannelCount + c]` and emit its `NeutralEvent`s at `offset` (see §8). Ascending channel order + `Timeline`'s insertion-order tie-break guarantee deterministic same-offset dispatch.
    c. **Advance:** `cursorSamples += currentSpeed * sampleRate * 2.5 / currentTempo`.
@@ -123,11 +123,17 @@ All types are POD: public members only, no methods that carry logic, no referenc
 
 **`Instrument`** (value type): `Bank` (`int`, SoundBank bank), `Program` (`int`, SoundBank program), `Name` (`string`, editor label — not read by the importer; see §10 for the YAGNI justification).
 
-**`Pattern`** (reference type — owns arrays): `Rows` (`int`, this pattern's height, authoritative for the importer), `Cells` (`Cell[]`, flat **row-major**, length `= Rows × Song.ChannelCount`, index `= row × ChannelCount + channel`).
+**`Pattern`** (reference type — owns arrays): `Rows` (**`int?`** — this pattern's height, or `null` to inherit `Song.DefaultRows`), `Cells` (`Cell[]`, flat **row-major**, length `= effectiveRows × Song.ChannelCount` where `effectiveRows = Rows ?? Song.DefaultRows`, index `= row × ChannelCount + channel`). The importer reads the effective count everywhere (row walk and grid-size validation). `Rows` is **nullable by deliberate design** — a non-nullable height always serializes a redundant number even when it equals the song default; `null` lets the engine's JSON serializer omit the field and expresses "not overridden" far more cleanly than a magic number that happens to match the default.
 
-**`Song`** (reference type — the aggregate root): `Title` (`string`), `DefaultBpm` (`int`), `DefaultSpeed` (`int`), `DefaultRows` (`int`), `ChannelCount` (`int`), `Instruments` (`Instrument[]`), `Patterns` (`Pattern[]`), `Order` (`int[]` — indices into `Patterns`, in play order).
+**`Song`** (reference type — the aggregate root): `Title` (`string`), `DefaultBpm` (`int`), `DefaultSpeed` (`int`), `DefaultRows` (`int`, the per-pattern row fallback when `Pattern.Rows` is `null`, and an editor's new-pattern default), `ChannelCount` (`int`), `Instruments` (`Instrument[]`), `Patterns` (`Pattern[]`), `Order` (`int[]` — indices into `Patterns`, in play order).
 
-**Serialization-friendliness (the brief's explicit ask):** the grid is a **flat `Cell[]` + explicit `Rows`** and a stride of `Song.ChannelCount`. This deliberately rejects `Cell[,]` (multidimensional arrays are *not* serializable by System.Text.Json and many engine serializers) and `Cell[][]` (jagged — the brief flags it as resisting serialization). A flat array of a 5-byte value struct is the friendliest possible shape: a JSON array of small objects, universally supported. There are **no nullable fields, no `[,]`, no jagged arrays, no object references between siblings** — every "optional" is a `0`-sentinel on a value type.
+**Serialization-friendliness (the brief's explicit ask):** the grid is a **flat `Cell[]` + effective `Rows`** and a stride of `Song.ChannelCount`. This deliberately rejects `Cell[,]` (multidimensional arrays are *not* serializable by System.Text.Json and many engine serializers) and `Cell[][]` (jagged — the brief flags it as resisting serialization). A flat array of a 5-byte value struct is the friendliest possible shape: a JSON array of small objects, universally supported. There are **no `[,]`, no jagged arrays, no object references between siblings**.
+
+**Nullable policy — sparse yes, dense no.** Optionality is expressed two different ways on purpose:
+- The **dense per-cell sub-columns** (`Note`/`Instrument`/`Volume`/`Effect`) use a `0`-sentinel and are **never nullable**. Each cell recurs thousands of times across a pattern grid; a nullable-per-sub-column encoding would bloat every serialized cell and destroy the `default(Cell) == empty` invariant that makes a freshly-allocated grid valid at zero cost.
+- The **sparse per-pattern `Pattern.Rows`** is **`int?`**. It occurs once per pattern (a handful per song), carries a genuine "not overridden — inherit the song default" meaning, and benefits from serializer field-omission. A `0`-sentinel here would be a magic number colliding with a legitimate (if unusual) zero-row pattern and would force writing a value even when none was intended.
+
+This asymmetry is the point: nullable earns its keep for the rare field with a true "absent" meaning; the 0-sentinel wins for the compact, ubiquitous one.
 
 **Conceptual relationships:** `Song 1──* Pattern`, `Song 1──* Instrument`, `Pattern 1──* Cell` (dense grid), `Song.Order *──1 Pattern` (by index, not reference — indices keep it a flat serializable tree, and let the same pattern appear many times in the order). Ownership is strictly top-down; there are no back-references.
 
@@ -137,7 +143,7 @@ All types are POD: public members only, no methods that carry logic, no referenc
 
 | Aspect | Contract |
 |--------|----------|
-| Input | A `Song` (assumed structurally consistent: `Cells.Length == Rows × ChannelCount`, `Order` entries in range) and a positive `sampleRate`. |
+| Input | A `Song` (assumed structurally consistent: `Cells.Length == effectiveRows × ChannelCount` where `effectiveRows = Pattern.Rows ?? Song.DefaultRows`, `Order` entries in range) and a positive `sampleRate`. |
 | Output | A fresh, populated (uncompiled) `Timeline`. |
 | Preconditions | `ChannelCount ∈ [1,16]`; `DefaultBpm > 0`, `DefaultSpeed > 0`. Violations throw `ArgumentException`/`ArgumentOutOfRangeException` at entry (fail fast, clear message). |
 | Postconditions | Every emitted entry's offset is `≥ 0` and non-decreasing across the walk. Each `NoteOn` is preceded on its channel by the release of any prior note (monophony). On/off pairs are `LinkNote`d. |
@@ -183,7 +189,8 @@ All types are POD: public members only, no methods that carry logic, no referenc
 |----------|---------------------|------------------------|-------------------|
 | Instrument **table** indexed by cell (CN-3) | Per-channel fixed patch | Importer carries per-channel "current instrument" state. | Per-channel-fixed *cannot represent* a channel that changes timbre across rows — the essence of tracker music. Every MOD/S3M/IT has a per-cell instrument column. Non-negotiable for faithfulness. |
 | Volume → **`SetChannelGain`**, constant velocity | Fold volume into `NoteOn` velocity | A sustained-note volume change and a trigger volume use the same path; relies on channel monophony. | Under CN-2 (one voice/channel) channel gain *is* the note's volume — exact, not approximate — and it uniformly handles trigger-time and standalone volume changes. Matches the S3M/IT volume-column model (velocity is not a MOD/S3M concept). |
-| **Flat `Cell[]` + Rows** | `Cell[,]` / `Cell[][]` | Caller indexes `row×stride+col` rather than `[r,c]`. | `[,]` is not JSON-serializable in STJ/most engine serializers; jagged is flagged as resisting. Flat is universally serializable. The stride math is trivial and lives in the importer. |
+| **Flat `Cell[]` + effective Rows** | `Cell[,]` / `Cell[][]` | Caller indexes `row×stride+col` rather than `[r,c]`. | `[,]` is not JSON-serializable in STJ/most engine serializers; jagged is flagged as resisting. Flat is universally serializable. The stride math is trivial and lives in the importer. |
+| **`Pattern.Rows` is `int?`** (null = inherit `Song.DefaultRows`) | Non-nullable `int` height | One nullable field in an otherwise sentinel-based model. | The sparse per-pattern field has a real "not overridden" meaning and lets the serializer omit it; a non-nullable height always writes a redundant number. Cell sub-columns stay non-nullable (dense grid — see §7 nullable policy). |
 | `Song.ChannelCount` capped at **16**, 1:1 map | Fold >16 tracker channels onto 16 voices | Songs authored for >16 channels are rejected. | The synth is a fixed 16-channel engine (CN-1); folding is a synth-capacity concern and "no synth changes" is a hard constraint. 16 channels is ample for game BGM (MOD=4, S3M≈16). Revisit only if Toni needs it (OQ-2). |
 | **`double` cursor**, round at emit | Sum per-row integer sample counts | Float reasoning in a bit-parity-conscious codebase. | Integer summing drifts (±0.5/row × thousands); the double accumulator is exact-position and deterministic. The MIDI path already reasons in float sample math, so this is house-consistent. |
 
