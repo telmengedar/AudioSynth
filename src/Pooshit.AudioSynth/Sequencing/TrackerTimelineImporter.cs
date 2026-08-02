@@ -11,8 +11,6 @@ namespace Pooshit.AudioSynth.Sequencing {
     public static class TrackerTimelineImporter {
 
         const int MaxChannels = 16;
-        const int DefaultVelocity = 127;
-        const int FullVolume = 64;
         const double TickSecondsScale = 2.5;
 
         /// <summary>
@@ -36,15 +34,9 @@ namespace Pooshit.AudioSynth.Sequencing {
 
             int channelCount = song.ChannelCount;
             Timeline.Timeline timeline = new Timeline.Timeline();
-
-            int[] currentInstrument = new int[channelCount];
-            int[] activeKey = new int[channelCount];
-            long[] openNoteId = new long[channelCount];
-            int[] appliedBank = new int[channelCount];
-            int[] appliedProgram = new int[channelCount];
-            bool[] patchApplied = new bool[channelCount];
+            TimelineCellSink sink = new TimelineCellSink(timeline, channelCount);
+            TrackerCellApplier applier = new TrackerCellApplier(channelCount, sink);
             for (int channel = 0; channel < channelCount; channel++) {
-                activeKey[channel] = -1;
                 timeline.Add(0, NeutralEvent.SetGain(channel, 1f));
                 timeline.Add(0, NeutralEvent.SetPan(channel, 0f));
             }
@@ -71,67 +63,15 @@ namespace Pooshit.AudioSynth.Sequencing {
                             currentTempo = cell.EffectParam;
                     }
 
-                    long offset = (long)Math.Round(cursor);
+                    sink.Offset = (long)Math.Round(cursor);
                     for (int channel = 0; channel < channelCount; channel++)
-                        EmitCell(timeline, offset, channel, pattern.Cells[rowBase + channel], song,
-                            currentInstrument, activeKey, openNoteId, appliedBank, appliedProgram, patchApplied);
+                        applier.Apply(pattern.Cells[rowBase + channel], channel, song);
 
                     cursor += currentSpeed * (double)sampleRate * TickSecondsScale / currentTempo;
                 }
             }
 
             return timeline;
-        }
-
-        static void EmitCell(Timeline.Timeline timeline, long offset, int channel, Cell cell, Song song,
-            int[] currentInstrument, int[] activeKey, long[] openNoteId,
-            int[] appliedBank, int[] appliedProgram, bool[] patchApplied) {
-            if (cell.Instrument != 0)
-                currentInstrument[channel] = cell.Instrument;
-
-            if (cell.Volume != 0) {
-                int level = cell.Volume > FullVolume ? FullVolume : cell.Volume;
-                timeline.Add(offset, NeutralEvent.SetGain(channel, level / (float)FullVolume));
-            }
-
-            if (TrackerNotes.IsPlayable(cell.Note)) {
-                ApplyPatch(timeline, offset, channel, song, currentInstrument, appliedBank, appliedProgram, patchApplied);
-                if (activeKey[channel] != -1)
-                    ReleaseActive(timeline, offset, channel, activeKey, openNoteId);
-                int key = TrackerNotes.KeyOf(cell.Note);
-                openNoteId[channel] = timeline.Add(offset, NeutralEvent.NoteOn(channel, key, DefaultVelocity));
-                activeKey[channel] = key;
-            }
-            else if (cell.Note == TrackerNotes.Off) {
-                if (activeKey[channel] != -1)
-                    ReleaseActive(timeline, offset, channel, activeKey, openNoteId);
-            }
-            else if (cell.Note == TrackerNotes.Cut) {
-                if (activeKey[channel] != -1) {
-                    timeline.Add(offset, NeutralEvent.SilenceChannel(channel));
-                    activeKey[channel] = -1;
-                }
-            }
-        }
-
-        static void ApplyPatch(Timeline.Timeline timeline, long offset, int channel, Song song,
-            int[] currentInstrument, int[] appliedBank, int[] appliedProgram, bool[] patchApplied) {
-            int slot = currentInstrument[channel];
-            if (slot < 1 || slot > song.Instruments.Length)
-                return;
-            Instrument instrument = song.Instruments[slot - 1];
-            if (patchApplied[channel] && appliedBank[channel] == instrument.Bank && appliedProgram[channel] == instrument.Program)
-                return;
-            timeline.Add(offset, NeutralEvent.SetPatch(channel, instrument.Bank, instrument.Program));
-            appliedBank[channel] = instrument.Bank;
-            appliedProgram[channel] = instrument.Program;
-            patchApplied[channel] = true;
-        }
-
-        static void ReleaseActive(Timeline.Timeline timeline, long offset, int channel, int[] activeKey, long[] openNoteId) {
-            long offId = timeline.Add(offset, NeutralEvent.NoteOff(channel, activeKey[channel]));
-            timeline.LinkNote(openNoteId[channel], offId);
-            activeKey[channel] = -1;
         }
     }
 }
