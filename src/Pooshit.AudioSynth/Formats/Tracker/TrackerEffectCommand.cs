@@ -1,10 +1,8 @@
 namespace Pooshit.AudioSynth.Formats.Tracker {
 
     /// <summary>
-    /// Library-known effect commands carried by a <see cref="Cell"/>'s effect sub-column. Backed by a
-    /// <c>byte</c> so the whole vocabulary is open: values without a named member are legal and pass
-    /// through the importer uninterpreted, letting a game engine define custom commands without breaking
-    /// the format.
+    /// Effect commands carried by a <see cref="Cell"/>. Byte-backed and open: unnamed values are legal and
+    /// pass through the importer uninterpreted.
     /// </summary>
     public enum TrackerEffectCommand : byte {
 

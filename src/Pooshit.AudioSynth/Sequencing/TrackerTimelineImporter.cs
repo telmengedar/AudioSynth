@@ -5,12 +5,8 @@ using Pooshit.AudioSynth.Sequencing.Timeline;
 namespace Pooshit.AudioSynth.Sequencing {
 
     /// <summary>
-    /// Tracker importer: lowers a POD <see cref="Song"/> onto a MIDI-neutral <see cref="Timeline.Timeline"/>,
-    /// the structural twin of <see cref="MidiTimelineImporter"/>. Walks the order list → patterns → rows →
-    /// channels, converts each row to a sample offset from the classic speed (ticks/row) + tempo (BPM)
-    /// clock, and emits <see cref="NeutralEvent"/>s per cell. Emits at row boundaries only; the per-tick
-    /// effect engine is a future extension the tick-based clock leaves room for. The result compiles and
-    /// plays through <see cref="RealtimeSequencer"/> unchanged.
+    /// Lowers a POD <see cref="Song"/> onto a MIDI-neutral <see cref="Timeline.Timeline"/> playable by
+    /// <see cref="RealtimeSequencer"/> — the tracker twin of <see cref="MidiTimelineImporter"/>.
     /// </summary>
     public static class TrackerTimelineImporter {
 
@@ -20,9 +16,8 @@ namespace Pooshit.AudioSynth.Sequencing {
         const double TickSecondsScale = 2.5;
 
         /// <summary>
-        /// Imports <paramref name="song"/> into a fresh <see cref="Timeline.Timeline"/>: seeds each channel's
-        /// gain and pan at offset 0, then accumulates a sample cursor across the order list, emitting each
-        /// cell's neutral events at its row offset. Symbolic throughout — never touches a SoundBank or patch.
+        /// Lowers <paramref name="song"/> into a fresh timeline, emitting each cell's neutral events at its
+        /// accumulated row offset. Symbolic throughout — never touches a SoundBank or patch.
         /// </summary>
         /// <param name="song">the composition to lower</param>
         /// <param name="sampleRate">target sample rate, used to convert rows to sample offsets</param>

@@ -3,10 +3,8 @@ using System;
 namespace Pooshit.AudioSynth.Formats.Tracker {
 
     /// <summary>
-    /// A whole tracker composition as plain, serializable data: playback defaults, the channel count, the
-    /// instrument table, the pattern bank, and the order list. A pure tree — no behavior, no engine
-    /// references, no cycles — so a game engine can serialize it to JSON itself. Lowered to playable
-    /// audio by <c>TrackerTimelineImporter</c>.
+    /// A whole tracker composition as plain, serializable data: playback defaults, instrument table,
+    /// pattern bank, and order list. Lowered to audio by <c>TrackerTimelineImporter</c>.
     /// </summary>
     public class Song {
 

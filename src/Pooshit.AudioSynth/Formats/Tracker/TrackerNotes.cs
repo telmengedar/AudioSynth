@@ -1,10 +1,8 @@
 namespace Pooshit.AudioSynth.Formats.Tracker {
 
     /// <summary>
-    /// Sentinel constants and pure key mapping helpers for a <see cref="Cell"/>'s note sub-column. Kept
-    /// off <see cref="Cell"/> itself so the cell stays a pure, behavior-free value type for serialization.
-    /// The note byte encodes: <c>0</c> empty, <c>1..120</c> a playable note (MIDI key = value − 1),
-    /// <c>254</c> note-off (release), <c>255</c> note-cut (immediate silence).
+    /// Sentinel constants and key-mapping helpers for a <see cref="Cell"/>'s note sub-column (<c>0</c>
+    /// empty, <c>1..120</c> a note with MIDI key = value − 1, <c>254</c> off, <c>255</c> cut).
     /// </summary>
     public static class TrackerNotes {
 

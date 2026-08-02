@@ -1,9 +1,7 @@
 namespace Pooshit.AudioSynth.Formats.Tracker {
 
     /// <summary>
-    /// One instrument-table slot: a symbolic mapping from a tracker instrument to a SoundBank
-    /// <c>(bank, program)</c> patch, plus an editor-facing label. Holds no audio data and no engine
-    /// handle — the bound SoundBank owns the actual patch.
+    /// One instrument-table slot: a symbolic SoundBank <c>(bank, program)</c> patch plus an editor label.
     /// </summary>
     public struct Instrument {
 

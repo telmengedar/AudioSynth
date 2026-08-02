@@ -9,9 +9,8 @@ using Pooshit.AudioSynth.Sequencing.Timeline;
 namespace Pooshit.AudioSynth.Tests.Tracker {
 
     /// <summary>
-    /// <see cref="TrackerTimelineImporter"/> lowering: row→sample-offset timing (including mid-song tempo
-    /// change and no drift), per-cell event emission, patch de-duplication, and entry validation. Asserts
-    /// directly on the deterministic compiled schedule.
+    /// <see cref="TrackerTimelineImporter"/> lowering: timing, event emission, and validation, asserted on
+    /// the compiled schedule.
     /// </summary>
     [TestFixture, Parallelizable]
     public class TrackerTimelineImporterTests {
@@ -161,6 +160,67 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
             song.ChannelCount = 17;
 
             Assert.That(() => TrackerTimelineImporter.Import(song, SampleRate), Throws.ArgumentException);
+        }
+
+        [Test, Parallelizable]
+        [Description("A SetSpeed effect on a row governs that row's own duration onward; halving the speed halves the row cadence.")]
+        public void Import_MidSongSpeedChange_ShiftsSubsequentOffsets() {
+            Cell speedAndNote = new Cell { Note = TrackerNotes.FromKey(60), Instrument = 1, Effect = TrackerEffectCommand.SetSpeed, EffectParam = 3 };
+            Song song = OneChannelSong(2, (0, speedAndNote), (1, Note(60, 1)));
+
+            long[] noteOnOffsets = OfKind(song, NeutralEventKind.NoteOn).Select(e => e.SampleOffset).ToArray();
+
+            Assert.That(noteOnOffsets, Is.EqualTo(new long[] { 0, 2646 }));
+        }
+
+        [Test, Parallelizable]
+        public void Import_NonPositiveSampleRate_Throws() {
+            Song song = OneChannelSong(1);
+
+            Assert.That(() => TrackerTimelineImporter.Import(song, 0), Throws.InstanceOf<ArgumentOutOfRangeException>());
+        }
+
+        [Test, Parallelizable]
+        public void Import_NonPositiveDefaultBpm_Throws() {
+            Song song = OneChannelSong(1);
+            song.DefaultBpm = 0;
+
+            Assert.That(() => TrackerTimelineImporter.Import(song, SampleRate), Throws.ArgumentException);
+        }
+
+        [Test, Parallelizable]
+        public void Import_NonPositiveDefaultSpeed_Throws() {
+            Song song = OneChannelSong(1);
+            song.DefaultSpeed = 0;
+
+            Assert.That(() => TrackerTimelineImporter.Import(song, SampleRate), Throws.ArgumentException);
+        }
+
+        [Test, Parallelizable]
+        [Description("A pattern whose flat grid is shorter than Rows × ChannelCount is rejected at import.")]
+        public void Import_PatternGridTooSmall_Throws() {
+            Song song = OneChannelSong(1);
+            song.Patterns[0].Rows = 4;
+
+            Assert.That(() => TrackerTimelineImporter.Import(song, SampleRate), Throws.ArgumentException);
+        }
+
+        [Test, Parallelizable]
+        [Description("A note on a channel with no valid instrument selects no patch but still triggers.")]
+        public void Import_NoteWithoutValidInstrument_SkipsPatchButTriggers() {
+            Song song = OneChannelSong(1, (0, Note(60)));
+
+            Assert.That(OfKind(song, NeutralEventKind.SetPatch), Is.Empty);
+            Assert.That(OfKind(song, NeutralEventKind.NoteOn).Count, Is.EqualTo(1));
+        }
+
+        [Test, Parallelizable]
+        [Description("An out-of-range order index is tolerated and skipped, not thrown; the valid entries still play.")]
+        public void Import_OrderIndexOutOfRange_IsSkipped() {
+            Song song = OneChannelSong(1, (0, Note(60, 1)));
+            song.Order = new[] { 99, 0 };
+
+            Assert.That(OfKind(song, NeutralEventKind.NoteOn).Count, Is.EqualTo(1));
         }
 
         [Test, Parallelizable]

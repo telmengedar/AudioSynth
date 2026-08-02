@@ -1,10 +1,8 @@
 namespace Pooshit.AudioSynth.Formats.Tracker {
 
     /// <summary>
-    /// One grid position in a <see cref="Pattern"/>: the five tracker sub-columns as plain value data.
-    /// The all-zero <c>default</c> is a fully empty cell that triggers nothing — every optional
-    /// sub-column uses <c>0</c> for "absent", so a freshly-allocated grid is already a valid empty
-    /// pattern and a JSON round-trip needs no special casing.
+    /// One grid position: the five tracker sub-columns as plain value data. The all-zero <c>default</c> is
+    /// a fully empty cell (every optional sub-column uses <c>0</c> = absent).
     /// </summary>
     public struct Cell {
 

@@ -11,9 +11,8 @@ using Pooshit.AudioSynth.Synthesis.Patches;
 namespace Pooshit.AudioSynth.Tests.Tracker {
 
     /// <summary>
-    /// End-to-end proof: a trivial in-code tracker <see cref="Song"/> lowers through
-    /// <see cref="TrackerTimelineImporter"/>, compiles, and renders non-silent, bounded audio through the
-    /// unchanged <see cref="RealtimeSequencer"/> — the same path the MIDI importer proves.
+    /// End-to-end: a trivial <see cref="Song"/> imports, compiles, and renders non-silent bounded audio
+    /// through <see cref="RealtimeSequencer"/>.
     /// </summary>
     [TestFixture, Parallelizable]
     public class TrackerSongRenderTests {

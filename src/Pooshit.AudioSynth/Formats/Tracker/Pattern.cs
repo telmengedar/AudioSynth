@@ -3,9 +3,8 @@ using System;
 namespace Pooshit.AudioSynth.Formats.Tracker {
 
     /// <summary>
-    /// One pattern: a <see cref="Rows"/> × <c>Song.ChannelCount</c> grid of <see cref="Cell"/>s stored as
-    /// a flat, row-major array (index = <c>row × channelCount + channel</c>). Flat rather than
-    /// multidimensional or jagged so it serializes to a plain JSON array on any engine serializer.
+    /// A flat, row-major <see cref="Cell"/> grid (index = <c>row × Song.ChannelCount + channel</c>) of
+    /// height <see cref="Rows"/>.
     /// </summary>
     public class Pattern {
 
