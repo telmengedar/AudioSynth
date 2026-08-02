@@ -34,7 +34,26 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
 
         static Cell Note(int key, int instrument = 0) => new Cell { Note = TrackerNotes.FromKey(key), Instrument = (byte)instrument };
 
-        static List<TimelineEntry> Entries(Song song) => TrackerTimelineImporter.Import(song, SampleRate).Compile().Entries.ToList();
+        static Cell JumpTo(int target) => new Cell { Effect = TrackerEffectCommand.JumpToOrder, EffectParam = (byte)target };
+
+        static Pattern SingleChannelPattern(int rows, params (int row, Cell cell)[] cells) {
+            Cell[] grid = new Cell[rows];
+            foreach ((int row, Cell cell) in cells)
+                grid[row] = cell;
+            return new Pattern { Rows = rows, Cells = grid };
+        }
+
+        static Song MultiOrderSong(int[] order, params Pattern[] patterns) => new Song {
+            DefaultBpm = 125,
+            DefaultSpeed = 6,
+            DefaultRows = 1,
+            ChannelCount = 1,
+            Instruments = new[] { new Instrument { Bank = 0, Program = 0, Name = "lead" } },
+            Patterns = patterns,
+            Order = order
+        };
+
+        static List<TimelineEntry> Entries(Song song) => TrackerTimelineImporter.Import(song, SampleRate).Timeline.Compile().Entries.ToList();
 
         static List<TimelineEntry> OfKind(Song song, NeutralEventKind kind) =>
             Entries(song).Where(e => e.Event.Kind == kind).ToList();
@@ -238,6 +257,97 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
         [Test, Parallelizable]
         public void Import_NullSong_Throws() {
             Assert.That(() => TrackerTimelineImporter.Import(null!, SampleRate), Throws.InstanceOf<ArgumentNullException>());
+        }
+
+        [Test, Parallelizable]
+        [Description("A backward JumpToOrder targeting an earlier position resolves to that position's start offset and the post-jump-row cursor.")]
+        public void Import_BackwardJump_ResolvesLoopRegion() {
+            Pattern patternA = SingleChannelPattern(1);
+            Pattern patternB = SingleChannelPattern(1, (0, JumpTo(0)));
+            Song song = MultiOrderSong(new[] { 0, 1 }, patternA, patternB);
+
+            TrackerImport import = TrackerTimelineImporter.Import(song, SampleRate);
+
+            Assert.That(import.LoopStart, Is.EqualTo(0L));
+            Assert.That(import.LoopEnd, Is.EqualTo(10584L));
+        }
+
+        [Test, Parallelizable]
+        [Description("A jump targeting a later-than-first order position produces a play-once intro before the loop starts.")]
+        public void Import_IntroThenLoop_LoopStartIsTargetPositionOffset() {
+            Pattern intro = SingleChannelPattern(1);
+            Pattern loop = SingleChannelPattern(1);
+            Pattern jump = SingleChannelPattern(1, (0, JumpTo(1)));
+            Song song = MultiOrderSong(new[] { 0, 1, 2 }, intro, loop, jump);
+
+            TrackerImport import = TrackerTimelineImporter.Import(song, SampleRate);
+
+            Assert.That(import.LoopStart, Is.EqualTo(5292L));
+            Assert.That(import.LoopStart, Is.GreaterThan(0L));
+            Assert.That(import.LoopEnd, Is.EqualTo(15876L));
+        }
+
+        [Test, Parallelizable]
+        [Description("When multiple valid jumps occur, the last one in scan order governs the loop region.")]
+        public void Import_MultipleValidJumps_LastOneWins() {
+            Pattern first = SingleChannelPattern(1);
+            Pattern jumpToFirst = SingleChannelPattern(1, (0, JumpTo(0)));
+            Pattern jumpToSecond = SingleChannelPattern(1, (0, JumpTo(1)));
+            Song song = MultiOrderSong(new[] { 0, 1, 2 }, first, jumpToFirst, jumpToSecond);
+
+            TrackerImport import = TrackerTimelineImporter.Import(song, SampleRate);
+
+            Assert.That(import.LoopStart, Is.EqualTo(5292L));
+            Assert.That(import.LoopEnd, Is.EqualTo(15876L));
+        }
+
+        [Test, Parallelizable]
+        [Description("A forward JumpToOrder target (beyond the current position) is ignored: no loop region results.")]
+        public void Import_ForwardJump_IsIgnored() {
+            Pattern withForwardJump = SingleChannelPattern(1, (0, JumpTo(1)));
+            Pattern target = SingleChannelPattern(1);
+            Song song = MultiOrderSong(new[] { 0, 1 }, withForwardJump, target);
+
+            TrackerImport import = TrackerTimelineImporter.Import(song, SampleRate);
+
+            Assert.That(import.LoopStart, Is.Null);
+            Assert.That(import.LoopEnd, Is.Null);
+        }
+
+        [Test, Parallelizable]
+        [Description("A JumpToOrder target at or beyond Order.Length is out of range and ignored: no loop region results.")]
+        public void Import_OutOfRangeJump_IsIgnored() {
+            Pattern first = SingleChannelPattern(1);
+            Pattern withOutOfRangeJump = SingleChannelPattern(1, (0, JumpTo(2)));
+            Song song = MultiOrderSong(new[] { 0, 1 }, first, withOutOfRangeJump);
+
+            TrackerImport import = TrackerTimelineImporter.Import(song, SampleRate);
+
+            Assert.That(import.LoopStart, Is.Null);
+            Assert.That(import.LoopEnd, Is.Null);
+        }
+
+        [Test, Parallelizable]
+        [Description("A self-targeting JumpToOrder (t == current position) loops the current pattern from its own start.")]
+        public void Import_SelfJump_LoopsCurrentPatternFromStart() {
+            Pattern selfLooping = SingleChannelPattern(2, (1, JumpTo(0)));
+            Song song = MultiOrderSong(new[] { 0 }, selfLooping);
+
+            TrackerImport import = TrackerTimelineImporter.Import(song, SampleRate);
+
+            Assert.That(import.LoopStart, Is.EqualTo(0L));
+            Assert.That(import.LoopEnd, Is.EqualTo(10584L));
+        }
+
+        [Test, Parallelizable]
+        [Description("A song with no JumpToOrder effect returns a null loop region, preserving today's finite playback.")]
+        public void Import_NoJump_ReturnsNullLoopRegion() {
+            Song song = OneChannelSong(1);
+
+            TrackerImport import = TrackerTimelineImporter.Import(song, SampleRate);
+
+            Assert.That(import.LoopStart, Is.Null);
+            Assert.That(import.LoopEnd, Is.Null);
         }
     }
 }

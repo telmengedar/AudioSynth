@@ -43,16 +43,33 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
             };
         }
 
+        static Song LoopingSong() {
+            Cell[] grid = new Cell[4];
+            grid[0] = new Cell { Note = TrackerNotes.FromKey(60), Instrument = 1, Volume = 64 };
+            grid[2] = new Cell { Note = TrackerNotes.FromKey(64), Instrument = 1 };
+            grid[3] = new Cell { Effect = TrackerEffectCommand.JumpToOrder, EffectParam = 0 };
+            return new Song {
+                Title = "looping",
+                DefaultBpm = 125,
+                DefaultSpeed = 6,
+                DefaultRows = 4,
+                ChannelCount = 1,
+                Instruments = new[] { new Instrument { Bank = 0, Program = 0, Name = "dc" } },
+                Patterns = new[] { new Pattern { Rows = 4, Cells = grid } },
+                Order = new[] { 0 }
+            };
+        }
+
         [Test, Parallelizable]
         public void TrivialSong_ThroughRealtimeSequencer_RendersNonSilentBoundedAudio() {
             SoundBank bank = new SoundBank(new[] {
                 (0, 0, (IPatch)new SamplePatch(SustainedDcRegion(0.4f, 8192), MonoFormat.SampleRate))
             });
 
-            Timeline timeline = TrackerTimelineImporter.Import(TrivialSong(), MonoFormat.SampleRate);
+            TrackerImport import = TrackerTimelineImporter.Import(TrivialSong(), MonoFormat.SampleRate);
             SynthesizerOptions options = new SynthesizerOptions(MonoFormat.SampleRate, MonoFormat.Channels, 64, 8);
             Synthesizer synth = new Synthesizer(options, bank.GetPatch(0, 0));
-            RealtimeSequencer driver = new RealtimeSequencer(timeline.Compile(), synth, bank, releaseTailFrames: 4410);
+            RealtimeSequencer driver = new RealtimeSequencer(import.Timeline.Compile(), synth, bank, releaseTailFrames: 4410);
 
             List<float> rendered = new List<float>();
             float[] block = new float[64];
@@ -74,6 +91,42 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
 
             Assert.That(bounded, Is.True, "all rendered samples must be within [-1, 1].");
             Assert.That(peak, Is.GreaterThan(0.01f), "a trivial tracker song must not render silent.");
+        }
+
+        [Test, Parallelizable]
+        [Description("A JumpToOrder loop region, rendered well past LoopEnd on a fixed frame budget, keeps producing bounded non-silent audio and never self-ends.")]
+        public void LoopingSong_ThroughRealtimeSequencer_RendersBoundedAudioPastLoopEnd() {
+            SoundBank bank = new SoundBank(new[] {
+                (0, 0, (IPatch)new SamplePatch(SustainedDcRegion(0.4f, 8192), MonoFormat.SampleRate))
+            });
+
+            TrackerImport import = TrackerTimelineImporter.Import(LoopingSong(), MonoFormat.SampleRate);
+            Assert.That(import.LoopStart, Is.Not.Null, "the looping song must resolve a loop region.");
+            Assert.That(import.LoopEnd, Is.Not.Null);
+
+            SynthesizerOptions options = new SynthesizerOptions(MonoFormat.SampleRate, MonoFormat.Channels, 64, 8);
+            Synthesizer synth = new Synthesizer(options, bank.GetPatch(0, 0));
+            RealtimeSequencer driver = new RealtimeSequencer(import.Timeline.Compile(), synth, bank,
+                releaseTailFrames: 4410, import.LoopStart, import.LoopEnd);
+
+            const int frameBudget = 100_000;
+            float[] block = new float[64];
+            int framesRendered = 0;
+            float peak = 0f;
+            bool bounded = true;
+            while (framesRendered < frameBudget) {
+                int produced = driver.Read(block);
+                Assert.That(produced, Is.GreaterThan(0), "a looping driver must never self-end or stall.");
+                for (int i = 0; i < produced; i++) {
+                    peak = Math.Max(peak, Math.Abs(block[i]));
+                    if (Math.Abs(block[i]) > 1f)
+                        bounded = false;
+                }
+                framesRendered += produced / MonoFormat.Channels;
+            }
+
+            Assert.That(bounded, Is.True, "all rendered samples must be within [-1, 1].");
+            Assert.That(peak, Is.GreaterThan(0.01f), "a looping tracker song must not render silent.");
         }
     }
 }

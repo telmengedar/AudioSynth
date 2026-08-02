@@ -21,8 +21,8 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// </summary>
         /// <param name="song">the composition to lower</param>
         /// <param name="sampleRate">target sample rate, used to convert rows to sample offsets</param>
-        /// <returns>a populated, uncompiled timeline</returns>
-        public static Timeline.Timeline Import(Song song, int sampleRate) {
+        /// <returns>the timeline plus the loop region of the last valid <see cref="TrackerEffectCommand.JumpToOrder"/>, if any</returns>
+        public static TrackerImport Import(Song song, int sampleRate) {
             if (song is null)
                 throw new ArgumentNullException(nameof(song));
             if (sampleRate <= 0)
@@ -53,7 +53,13 @@ namespace Pooshit.AudioSynth.Sequencing {
             int currentTempo = song.DefaultBpm;
             double cursor = 0.0;
 
-            foreach (int orderIndex in song.Order) {
+            long[] orderStart = new long[song.Order.Length];
+            long? loopStart = null;
+            long? loopEnd = null;
+
+            for (int pos = 0; pos < song.Order.Length; pos++) {
+                orderStart[pos] = (long)Math.Round(cursor);
+                int orderIndex = song.Order[pos];
                 if (orderIndex < 0 || orderIndex >= song.Patterns.Length)
                     continue;
                 Pattern pattern = song.Patterns[orderIndex];
@@ -63,12 +69,18 @@ namespace Pooshit.AudioSynth.Sequencing {
 
                 for (int row = 0; row < rows; row++) {
                     int rowBase = row * channelCount;
+                    bool jumpThisRow = false;
+                    int jumpTarget = 0;
                     for (int channel = 0; channel < channelCount; channel++) {
                         Cell cell = pattern.Cells[rowBase + channel];
                         if (cell.Effect == TrackerEffectCommand.SetSpeed && cell.EffectParam > 0)
                             currentSpeed = cell.EffectParam;
                         else if (cell.Effect == TrackerEffectCommand.SetTempo && cell.EffectParam > 0)
                             currentTempo = cell.EffectParam;
+                        else if (cell.Effect == TrackerEffectCommand.JumpToOrder && cell.EffectParam <= pos) {
+                            jumpThisRow = true;
+                            jumpTarget = cell.EffectParam;
+                        }
                     }
 
                     long offset = (long)Math.Round(cursor);
@@ -77,10 +89,15 @@ namespace Pooshit.AudioSynth.Sequencing {
                             currentInstrument, activeKey, openNoteId, appliedBank, appliedProgram, patchApplied);
 
                     cursor += currentSpeed * (double)sampleRate * TickSecondsScale / currentTempo;
+
+                    if (jumpThisRow) {
+                        loopStart = orderStart[jumpTarget];
+                        loopEnd = (long)Math.Round(cursor);
+                    }
                 }
             }
 
-            return timeline;
+            return new TrackerImport(timeline, loopStart, loopEnd);
         }
 
         static void EmitCell(Timeline.Timeline timeline, long offset, int channel, Cell cell, Song song,
