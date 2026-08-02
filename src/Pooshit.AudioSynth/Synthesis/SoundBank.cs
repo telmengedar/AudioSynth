@@ -14,28 +14,40 @@ namespace Pooshit.AudioSynth.Synthesis {
         const int DefaultProgram = 0;
 
         readonly IPatch[] patches;
-        readonly Dictionary<int, SortedDictionary<int, IPatch>> byBank;
+        readonly Dictionary<int, SortedDictionary<int, (string Name, IPatch Patch)>> byBank;
+        readonly PatchInfo[] availablePatches;
 
         /// <summary>
-        /// Builds a <see cref="SoundBank"/> from an ordered collection of (bank, program, patch) entries.
+        /// Builds a <see cref="SoundBank"/> from an ordered collection of (bank, program, name, patch) entries.
         /// </summary>
-        public SoundBank(IEnumerable<(int Bank, int Program, IPatch Patch)> entries) {
+        public SoundBank(IEnumerable<(int Bank, int Program, string Name, IPatch Patch)> entries) {
             if (entries is null) throw new ArgumentNullException(nameof(entries));
 
             List<IPatch> all = new List<IPatch>();
-            byBank = new Dictionary<int, SortedDictionary<int, IPatch>>();
-            foreach ((int bank, int program, IPatch patch) in entries) {
+            byBank = new Dictionary<int, SortedDictionary<int, (string Name, IPatch Patch)>>();
+            foreach ((int bank, int program, string name, IPatch patch) in entries) {
                 if (patch is null)
                     throw new ArgumentException("Entry patch must not be null.", nameof(entries));
+                if (name is null)
+                    throw new ArgumentException("Entry name must not be null.", nameof(entries));
 
                 all.Add(patch);
-                if (!byBank.TryGetValue(bank, out SortedDictionary<int, IPatch>? programs)) {
-                    programs = new SortedDictionary<int, IPatch>();
+                if (!byBank.TryGetValue(bank, out SortedDictionary<int, (string Name, IPatch Patch)>? programs)) {
+                    programs = new SortedDictionary<int, (string Name, IPatch Patch)>();
                     byBank[bank] = programs;
                 }
-                programs[program] = patch;
+                programs[program] = (name, patch);
             }
             patches = all.ToArray();
+            availablePatches = BuildAvailablePatches(byBank);
+        }
+
+        static PatchInfo[] BuildAvailablePatches(Dictionary<int, SortedDictionary<int, (string Name, IPatch Patch)>> byBank) {
+            List<PatchInfo> result = new List<PatchInfo>();
+            foreach (int bank in new SortedSet<int>(byBank.Keys))
+                foreach (KeyValuePair<int, (string Name, IPatch Patch)> entry in byBank[bank])
+                    result.Add(new PatchInfo(bank, entry.Key, entry.Value.Name));
+            return result.ToArray();
         }
 
         /// <summary>
@@ -47,6 +59,12 @@ namespace Pooshit.AudioSynth.Synthesis {
         /// Number of patches loaded into this bank.
         /// </summary>
         public int Count => patches.Length;
+
+        /// <summary>
+        /// Loadable patches as (bank, program, name), ordered bank then program ascending; exactly the
+        /// set <see cref="GetPatch"/> resolves by exact match.
+        /// </summary>
+        public IReadOnlyList<PatchInfo> AvailablePatches => availablePatches;
 
         /// <summary>
         /// Resolves (bank, program) via the fallback chain: exact match, bank-0 same program (variation
@@ -73,17 +91,19 @@ namespace Pooshit.AudioSynth.Synthesis {
         }
 
         bool TryExactMatch(int bank, int program, out IPatch? patch) {
-            if (byBank.TryGetValue(bank, out SortedDictionary<int, IPatch>? programs)
-                && programs.TryGetValue(program, out patch))
+            if (byBank.TryGetValue(bank, out SortedDictionary<int, (string Name, IPatch Patch)>? programs)
+                && programs.TryGetValue(program, out (string Name, IPatch Patch) entry)) {
+                patch = entry.Patch;
                 return true;
+            }
             patch = null;
             return false;
         }
 
         bool TryLowestInBank(int bank, out IPatch? patch) {
-            if (byBank.TryGetValue(bank, out SortedDictionary<int, IPatch>? programs)) {
-                foreach (KeyValuePair<int, IPatch> entry in programs) {
-                    patch = entry.Value;
+            if (byBank.TryGetValue(bank, out SortedDictionary<int, (string Name, IPatch Patch)>? programs)) {
+                foreach (KeyValuePair<int, (string Name, IPatch Patch)> entry in programs) {
+                    patch = entry.Value.Patch;
                     return true;
                 }
             }

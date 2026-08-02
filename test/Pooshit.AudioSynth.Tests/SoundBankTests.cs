@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using Pooshit.AudioSynth.Synthesis;
 using Pooshit.AudioSynth.Tests.Helpers;
@@ -20,8 +21,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch piano = new StubPatch("piano");
             StubPatch bass = new StubPatch("bass");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (0, 33, (IPatch)bass),
+                (0, 0, "piano", (IPatch)piano),
+                (0, 33, "bass", (IPatch)bass),
             });
 
             Assert.That(bank.GetPatch(0, 33), Is.SameAs(bass));
@@ -33,8 +34,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch low = new StubPatch("low");
             StubPatch high = new StubPatch("high");
             SoundBank bank = new SoundBank(new[] {
-                (0, 10, (IPatch)high),
-                (0, 3, (IPatch)low),
+                (0, 10, "high", (IPatch)high),
+                (0, 3, "low", (IPatch)low),
             });
 
             Assert.That(bank.GetPatch(0, 5), Is.SameAs(low),
@@ -49,7 +50,7 @@ namespace Pooshit.AudioSynth.Tests {
         public void GetPatch_BankAbsentAndGmProgramAbsent_FallsBackToBankZeroProgramZero() {
             StubPatch piano = new StubPatch("piano");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
+                (0, 0, "piano", (IPatch)piano),
             });
 
             Assert.That(bank.GetPatch(5, 12), Is.SameAs(piano),
@@ -65,8 +66,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch piano = new StubPatch("piano");
             StubPatch viola = new StubPatch("viola");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (0, 40, (IPatch)viola),
+                (0, 0, "piano", (IPatch)piano),
+                (0, 40, "viola", (IPatch)viola),
             });
 
             Assert.That(bank.GetPatch(8, 40), Is.SameAs(viola),
@@ -83,8 +84,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch bankEightLow = new StubPatch("bank8-lowest");
             StubPatch viola = new StubPatch("viola");
             SoundBank bank = new SoundBank(new[] {
-                (8, 3, (IPatch)bankEightLow),
-                (0, 40, (IPatch)viola),
+                (8, 3, "bank8-lowest", (IPatch)bankEightLow),
+                (0, 40, "viola", (IPatch)viola),
             });
 
             Assert.That(bank.GetPatch(8, 40), Is.SameAs(viola),
@@ -99,8 +100,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch low = new StubPatch("low");
             StubPatch high = new StubPatch("high");
             SoundBank bank = new SoundBank(new[] {
-                (0, 10, (IPatch)high),
-                (0, 3, (IPatch)low),
+                (0, 10, "high", (IPatch)high),
+                (0, 3, "low", (IPatch)low),
             });
 
             Assert.That(bank.GetPatch(0, 99), Is.SameAs(low),
@@ -116,8 +117,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch piano = new StubPatch("piano");
             StubPatch kit = new StubPatch("kit");
             SoundBank bank = new SoundBank(new[] {
-                (0, 57, (IPatch)piano),
-                (128, 0, (IPatch)kit),
+                (0, 57, "piano", (IPatch)piano),
+                (128, 0, "kit", (IPatch)kit),
             });
 
             Assert.That(bank.GetPatch(128, 57), Is.SameAs(kit),
@@ -131,8 +132,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch first = new StubPatch("first");
             StubPatch second = new StubPatch("second");
             SoundBank bank = new SoundBank(new[] {
-                (3, 7, (IPatch)first),
-                (3, 9, (IPatch)second),
+                (3, 7, "first", (IPatch)first),
+                (3, 9, "second", (IPatch)second),
             });
 
             Assert.That(bank.GetPatch(128, 0), Is.SameAs(first),
@@ -145,8 +146,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch piano = new StubPatch("piano");
             StubPatch kit = new StubPatch("kit");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (128, 0, (IPatch)kit),
+                (0, 0, "piano", (IPatch)piano),
+                (128, 0, "kit", (IPatch)kit),
             });
 
             Assert.That(bank.GetPatch(128, 57), Is.SameAs(kit),
@@ -156,7 +157,7 @@ namespace Pooshit.AudioSynth.Tests {
         [Test]
         [Description("GetPatch throws a clear exception when the bank holds no patches at all.")]
         public void GetPatch_EmptyBank_Throws() {
-            SoundBank bank = new SoundBank(Array.Empty<(int, int, IPatch)>());
+            SoundBank bank = new SoundBank(Array.Empty<(int, int, string, IPatch)>());
 
             Assert.Throws<InvalidOperationException>(() => bank.GetPatch(0, 0));
         }
@@ -167,8 +168,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch a = new StubPatch("a");
             StubPatch b = new StubPatch("b");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)a),
-                (0, 1, (IPatch)b),
+                (0, 0, "a", (IPatch)a),
+                (0, 1, "b", (IPatch)b),
             });
 
             Assert.That(bank.Count, Is.EqualTo(2));
@@ -179,6 +180,95 @@ namespace Pooshit.AudioSynth.Tests {
         [Description("Constructing a SoundBank from a null entry collection throws ArgumentNullException.")]
         public void Constructor_NullEntries_Throws() {
             Assert.Throws<ArgumentNullException>(() => new SoundBank(null!));
+        }
+
+        [Test]
+        [Description("Constructing a SoundBank with a null entry name throws ArgumentException, matching the null-patch guard.")]
+        public void Constructor_NullName_Throws() {
+            StubPatch piano = new StubPatch("piano");
+
+            Assert.Throws<ArgumentException>(() => new SoundBank(new[] {
+                (0, 0, (string)null!, (IPatch)piano),
+            }));
+        }
+
+        [Test]
+        [Description("AvailablePatches returns one PatchInfo per loaded slot with the correct bank, program and name.")]
+        public void AvailablePatches_ReturnsOnePatchInfoPerLoadedSlot() {
+            StubPatch piano = new StubPatch("piano");
+            StubPatch bass = new StubPatch("bass");
+            SoundBank bank = new SoundBank(new[] {
+                (0, 0, "piano", (IPatch)piano),
+                (0, 33, "bass", (IPatch)bass),
+            });
+
+            Assert.That(bank.AvailablePatches, Has.Count.EqualTo(2));
+            Assert.That(bank.AvailablePatches[0].Bank, Is.EqualTo(0));
+            Assert.That(bank.AvailablePatches[0].Program, Is.EqualTo(0));
+            Assert.That(bank.AvailablePatches[0].Name, Is.EqualTo("piano"));
+            Assert.That(bank.AvailablePatches[1].Program, Is.EqualTo(33));
+            Assert.That(bank.AvailablePatches[1].Name, Is.EqualTo("bass"));
+        }
+
+        [Test]
+        [Description("AvailablePatches is ordered (bank, program) ascending across multiple banks, independent of load order.")]
+        public void AvailablePatches_OrderedByBankThenProgramAscending() {
+            StubPatch a = new StubPatch("a");
+            StubPatch b = new StubPatch("b");
+            StubPatch c = new StubPatch("c");
+            SoundBank bank = new SoundBank(new[] {
+                (1, 5, "c", (IPatch)c),
+                (0, 10, "b", (IPatch)b),
+                (0, 2, "a", (IPatch)a),
+            });
+
+            Assert.That(bank.AvailablePatches.Select(p => (p.Bank, p.Program)),
+                Is.EqualTo(new[] { (0, 2), (0, 10), (1, 5) }));
+        }
+
+        [Test]
+        [Description("A duplicate (bank, program) across two entries appears once in AvailablePatches, carrying the last-written name, matching GetPatch's last-write-wins resolution.")]
+        public void AvailablePatches_DuplicateBankProgram_ListedOnceWithLastWrittenName() {
+            StubPatch first = new StubPatch("first");
+            StubPatch second = new StubPatch("second");
+            SoundBank bank = new SoundBank(new[] {
+                (0, 0, "first", (IPatch)first),
+                (0, 0, "second", (IPatch)second),
+            });
+
+            Assert.That(bank.AvailablePatches, Has.Count.EqualTo(1));
+            Assert.That(bank.AvailablePatches[0].Name, Is.EqualTo("second"));
+            Assert.That(bank.GetPatch(0, 0), Is.SameAs(second));
+        }
+
+        [Test]
+        [Description("Invariant: for every PatchInfo in AvailablePatches, GetPatch resolves it by exact match to the patch whose name matches (the no-drift invariant).")]
+        public void AvailablePatches_EveryEntry_ResolvesByExactMatchToMatchingName() {
+            StubPatch piano = new StubPatch("piano");
+            StubPatch kit = new StubPatch("kit");
+            StubPatch viola = new StubPatch("viola");
+            SoundBank bank = new SoundBank(new[] {
+                (0, 0, "piano", (IPatch)piano),
+                (128, 0, "kit", (IPatch)kit),
+                (8, 40, "viola", (IPatch)viola),
+            });
+
+            foreach (PatchInfo info in bank.AvailablePatches) {
+                IPatch resolved = bank.GetPatch(info.Bank, info.Program);
+                Assert.That(resolved, Is.SameAs(info.Bank switch {
+                    0 => piano,
+                    128 => kit,
+                    _ => viola,
+                }), $"PatchInfo {info} must resolve by exact match to the patch it was built from.");
+            }
+        }
+
+        [Test]
+        [Description("AvailablePatches on an empty bank returns an empty list without throwing.")]
+        public void AvailablePatches_EmptyBank_ReturnsEmptyList() {
+            SoundBank bank = new SoundBank(Array.Empty<(int, int, string, IPatch)>());
+
+            Assert.That(bank.AvailablePatches, Is.Empty);
         }
     }
 }

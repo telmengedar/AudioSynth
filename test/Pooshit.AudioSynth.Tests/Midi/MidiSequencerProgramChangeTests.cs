@@ -35,8 +35,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch piano = new StubPatch("piano");
             StubPatch kit = new StubPatch("kit");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (128, 0, (IPatch)kit),
+                (0, 0, "piano", (IPatch)piano),
+                (128, 0, "kit", (IPatch)kit),
             });
             RecordingSynthesizer synth = new RecordingSynthesizer(Format);
             TimedMessageSequence sequence = BuildSequence(new MidiTrackEventBuilder());
@@ -60,9 +60,9 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch epiano = new StubPatch("epiano");
             StubPatch kit = new StubPatch("kit");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (0, 5, (IPatch)epiano),
-                (128, 0, (IPatch)kit),
+                (0, 0, "piano", (IPatch)piano),
+                (0, 5, "epiano", (IPatch)epiano),
+                (128, 0, "kit", (IPatch)kit),
             });
             RecordingSynthesizer synth = new RecordingSynthesizer(Format);
             TimedMessageSequence sequence = BuildSequence(
@@ -83,8 +83,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch piano = new StubPatch("piano");
             StubPatch kit = new StubPatch("kit");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (128, 0, (IPatch)kit),
+                (0, 0, "piano", (IPatch)piano),
+                (128, 0, "kit", (IPatch)kit),
             });
             RecordingSynthesizer synth = new RecordingSynthesizer(Format);
             TimedMessageSequence sequence = BuildSequence(

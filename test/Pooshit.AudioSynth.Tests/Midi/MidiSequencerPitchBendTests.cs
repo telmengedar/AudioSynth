@@ -29,8 +29,8 @@ namespace Pooshit.AudioSynth.Tests {
         static SoundBank SinglePresetBank() {
             StubPatch piano = new StubPatch("piano");
             return new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (128, 0, (IPatch)piano),
+                (0, 0, "piano", (IPatch)piano),
+                (128, 0, "piano", (IPatch)piano),
             });
         }
 

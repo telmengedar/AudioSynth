@@ -21,7 +21,7 @@ namespace Pooshit.AudioSynth.Tests {
 
         static readonly AudioFormat MonoFormat = new AudioFormat(44100, 1);
 
-        static SoundBank SinglePatchBank(IPatch patch) => new SoundBank(new[] { (0, 0, patch), (128, 0, patch) });
+        static SoundBank SinglePatchBank(IPatch patch) => new SoundBank(new[] { (0, 0, "", patch), (128, 0, "", patch) });
 
         static SampleRegion BuildSustainedDcRegion(float value, int length) {
             float[] buffer = new float[length];

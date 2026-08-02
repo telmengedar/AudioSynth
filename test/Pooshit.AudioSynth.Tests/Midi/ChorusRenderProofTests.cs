@@ -43,7 +43,7 @@ namespace Pooshit.AudioSynth.Tests {
             SynthesizerOptions options = new SynthesizerOptions(SampleRate, 2, 64, 8, chorus: ChorusSettings.Default);
             SampleRegion region = BuildSustainedDcRegion(0.3f, 8192);
             SamplePatch patch = new SamplePatch(region, options.SampleRate);
-            SoundBank bank = new SoundBank(new[] { (0, 0, (IPatch)patch), (128, 0, (IPatch)patch) });
+            SoundBank bank = new SoundBank(new[] { (0, 0, "", (IPatch)patch), (128, 0, "", (IPatch)patch) });
             Synthesizer synth = new Synthesizer(options, patch);
             InMemoryAudioSink sink = new InMemoryAudioSink(synth.Format);
 

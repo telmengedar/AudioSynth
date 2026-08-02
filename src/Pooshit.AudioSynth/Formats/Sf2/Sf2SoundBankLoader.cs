@@ -480,10 +480,10 @@ namespace Pooshit.AudioSynth.Formats.Sf2 {
             Sf2SampleData sampleData,
             int rate) {
 
-            List<(int Bank, int Program, IPatch Patch)> entries = new List<(int, int, IPatch)>(presets.Length);
+            List<(int Bank, int Program, string Name, IPatch Patch)> entries = new List<(int, int, string, IPatch)>(presets.Length);
             foreach (Sf2PresetHeader preset in presets) {
                 Sf2Patch patch = new Sf2Patch(preset, instruments, sampleHeaders, sampleData, rate);
-                entries.Add((preset.BankNumber, preset.PatchNumber, patch));
+                entries.Add((preset.BankNumber, preset.PatchNumber, preset.Name, patch));
             }
             return new SoundBank(entries);
         }

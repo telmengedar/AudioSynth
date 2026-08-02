@@ -53,8 +53,8 @@ namespace Pooshit.AudioSynth.Tests {
             RecordingSynthesizer synth = new RecordingSynthesizer(Format);
             StubPatch piano = new StubPatch("piano");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (128, 0, (IPatch)piano),
+                (0, 0, "piano", (IPatch)piano),
+                (128, 0, "piano", (IPatch)piano),
             });
 
             MidiSequencer.Render(sequence, synth, new InMemoryAudioSink(Format), bank);

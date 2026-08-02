@@ -37,7 +37,7 @@ namespace Pooshit.AudioSynth.Tests {
         public void Render_BankSelectAlone_ProducesNoAdditionalSetChannelPatchCall() {
             StubPatch piano = new StubPatch("piano");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
+                (0, 0, "piano", (IPatch)piano),
             });
             RecordingSynthesizer synth = new RecordingSynthesizer(Format);
             TimedMessageSequence sequence = BuildSequence(
@@ -59,9 +59,9 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch variation = new StubPatch("bank8-variation");
             StubPatch kit = new StubPatch("kit");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (8, 5, (IPatch)variation),
-                (128, 0, (IPatch)kit),
+                (0, 0, "piano", (IPatch)piano),
+                (8, 5, "bank8-variation", (IPatch)variation),
+                (128, 0, "kit", (IPatch)kit),
             });
             RecordingSynthesizer synth = new RecordingSynthesizer(Format);
             TimedMessageSequence sequence = BuildSequence(
@@ -85,8 +85,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch piano = new StubPatch("piano");
             StubPatch kit = new StubPatch("kit");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (128, 0, (IPatch)kit),
+                (0, 0, "piano", (IPatch)piano),
+                (128, 0, "kit", (IPatch)kit),
             });
             RecordingSynthesizer synth = new RecordingSynthesizer(Format);
             TimedMessageSequence sequence = BuildSequence(
@@ -111,8 +111,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch piano = new StubPatch("piano");
             StubPatch viola = new StubPatch("viola");
             SoundBank gmOnlyBank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (0, 40, (IPatch)viola),
+                (0, 0, "piano", (IPatch)piano),
+                (0, 40, "viola", (IPatch)viola),
             });
             RecordingSynthesizer synth = new RecordingSynthesizer(Format);
             TimedMessageSequence sequence = BuildSequence(
@@ -136,8 +136,8 @@ namespace Pooshit.AudioSynth.Tests {
             StubPatch piano = new StubPatch("piano");
             StubPatch variation = new StubPatch("bank8-variation");
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (8, 5, (IPatch)variation),
+                (0, 0, "piano", (IPatch)piano),
+                (8, 5, "bank8-variation", (IPatch)variation),
             });
 
             RecordingSynthesizer firstSynth = new RecordingSynthesizer(Format);

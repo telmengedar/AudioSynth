@@ -36,8 +36,8 @@ namespace Pooshit.AudioSynth.Tests {
         static SoundBank SinglePresetBank() {
             StubPatch piano = new StubPatch("piano");
             return new SoundBank(new[] {
-                (0, 0, (IPatch)piano),
-                (128, 0, (IPatch)piano),
+                (0, 0, "piano", (IPatch)piano),
+                (128, 0, "piano", (IPatch)piano),
             });
         }
 
@@ -225,8 +225,8 @@ namespace Pooshit.AudioSynth.Tests {
 
             AudioFormat format = new AudioFormat(RealEngineSampleRate, 1);
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)new SamplePatch(BuildSustainedDcRegion(value, 4096), RealEngineSampleRate)),
-                (128, 0, (IPatch)new SamplePatch(BuildSustainedDcRegion(value, 4096), RealEngineSampleRate)),
+                (0, 0, "", (IPatch)new SamplePatch(BuildSustainedDcRegion(value, 4096), RealEngineSampleRate)),
+                (128, 0, "", (IPatch)new SamplePatch(BuildSustainedDcRegion(value, 4096), RealEngineSampleRate)),
             });
             SynthesizerOptions options = new SynthesizerOptions(RealEngineSampleRate, 1, 64, 4);
             Synthesizer synthesizer = new Synthesizer(options, bank.GetPatch(0, 0));

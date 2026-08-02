@@ -17,10 +17,10 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
         const int SampleRate = 44100;
 
         static SoundBank OnePatchBank() =>
-            new SoundBank(new[] { (0, 0, (IPatch)new StubPatch("a")) });
+            new SoundBank(new[] { (0, 0, "a", (IPatch)new StubPatch("a")) });
 
         static SoundBank TwoPatchBank() =>
-            new SoundBank(new[] { (0, 0, (IPatch)new StubPatch("a")), (1, 5, (IPatch)new StubPatch("b")) });
+            new SoundBank(new[] { (0, 0, "a", (IPatch)new StubPatch("a")), (1, 5, "b", (IPatch)new StubPatch("b")) });
 
         static CallLoggingSynthesizer Logging(int sampleRate = SampleRate) =>
             new CallLoggingSynthesizer(new AudioFormat(sampleRate, 1));
@@ -448,7 +448,7 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
                 dc[i] = 0.4f;
             SampleRegion region = new SampleRegion(dc, 0, dc.Length, 0, dc.Length, LoopMode.Continuous,
                 SampleRate, 60, 0, EnvelopeParameters.Default, FilterParameters.Default, LfoParameters.Default, 0f);
-            SoundBank bank = new SoundBank(new[] { (0, 0, (IPatch)new SamplePatch(region, SampleRate)) });
+            SoundBank bank = new SoundBank(new[] { (0, 0, "", (IPatch)new SamplePatch(region, SampleRate)) });
 
             Cell[] grid = new Cell[4];
             grid[0] = Note(60, instrument: 1, volume: 64);
