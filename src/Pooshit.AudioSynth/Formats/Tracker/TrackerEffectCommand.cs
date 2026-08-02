@@ -13,6 +13,9 @@ namespace Pooshit.AudioSynth.Formats.Tracker {
         SetSpeed = 1,
 
         /// <summary>Set the playback tempo in BPM; parameter is the beats-per-minute value.</summary>
-        SetTempo = 2
+        SetTempo = 2,
+
+        /// <summary>Jump the cursor to an order-list position; parameter is the target index into <see cref="Song.Order"/>.</summary>
+        JumpToOrder = 3
     }
 }
