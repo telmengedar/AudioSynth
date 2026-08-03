@@ -18,7 +18,7 @@ namespace Pooshit.AudioSynth.Sequencing {
         readonly ISynthesizer synth;
         readonly int channelCount;
         readonly int sampleRate;
-        readonly TrackerCellApplier applier;
+        readonly TrackerEffectEngine engine;
 
         int orderIndex;
         int row;
@@ -28,8 +28,10 @@ namespace Pooshit.AudioSynth.Sequencing {
         int currentTempo;
         double rowStartCursor;
         double currentRowSpr;
-        long rowSamples;
-        long sampleWithinRow;
+        double sprPerTick;
+        int tickIndex;
+        long currentTickSamples;
+        long sampleWithinTick;
         bool rowApplied;
         bool playing;
         bool pendingJump;
@@ -53,7 +55,7 @@ namespace Pooshit.AudioSynth.Sequencing {
 
             channelCount = song.ChannelCount;
             sampleRate = synth.Format.SampleRate;
-            applier = new TrackerCellApplier(channelCount, new SynthCellSink(synth, soundBank));
+            engine = new TrackerEffectEngine(channelCount, synth, soundBank);
             currentSpeed = song.DefaultSpeed;
             currentTempo = song.DefaultBpm;
         }
@@ -90,7 +92,7 @@ namespace Pooshit.AudioSynth.Sequencing {
         /// <param name="targetRow">target row within the pattern at that position</param>
         public void SeekTo(int order, int targetRow) {
             SilenceAll();
-            applier.Reset();
+            engine.Reset();
             currentSpeed = song.DefaultSpeed;
             currentTempo = song.DefaultBpm;
             orderIndex = order < 0 ? 0 : order;
@@ -98,7 +100,8 @@ namespace Pooshit.AudioSynth.Sequencing {
             currentOrder = orderIndex;
             currentRow = row;
             rowStartCursor = 0.0;
-            sampleWithinRow = 0;
+            tickIndex = 0;
+            sampleWithinTick = 0;
             rowApplied = false;
             pendingJump = false;
         }
@@ -119,18 +122,15 @@ namespace Pooshit.AudioSynth.Sequencing {
                     EnterRow();
 
                 int frames = playing
-                    ? (int)Math.Min(totalFrames - produced, rowSamples - sampleWithinRow)
+                    ? (int)Math.Min(totalFrames - produced, currentTickSamples - sampleWithinTick)
                     : totalFrames - produced;
                 int got = synth.Read(destination.Slice(produced * channels, frames * channels)) / channels;
                 produced += got;
 
                 if (playing) {
-                    sampleWithinRow += got;
-                    if (got == frames && sampleWithinRow >= rowSamples) {
-                        rowStartCursor += currentRowSpr;
-                        AdvanceRow();
-                        rowApplied = false;
-                    }
+                    sampleWithinTick += got;
+                    if (got == frames && sampleWithinTick >= currentTickSamples)
+                        AdvanceTick();
                 }
 
                 if (got < frames)
@@ -138,6 +138,29 @@ namespace Pooshit.AudioSynth.Sequencing {
             }
 
             return produced * channels;
+        }
+
+        void AdvanceTick() {
+            int nextTick = tickIndex + 1;
+            if (nextTick >= currentSpeed) {
+                rowStartCursor += currentRowSpr;
+                AdvanceRow();
+                rowApplied = false;
+            }
+            else {
+                engine.Tick(nextTick);
+                EnterTick(nextTick);
+            }
+        }
+
+        void EnterTick(int t) {
+            tickIndex = t;
+            long start = (long)Math.Round(rowStartCursor + t * sprPerTick);
+            long end = (long)Math.Round(rowStartCursor + (t + 1) * sprPerTick);
+            currentTickSamples = end - start;
+            if (currentTickSamples < 1)
+                currentTickSamples = 1;
+            sampleWithinTick = 0;
         }
 
         void EnterRow() {
@@ -202,20 +225,14 @@ namespace Pooshit.AudioSynth.Sequencing {
 
         void ApplyRow(Pattern pattern) {
             currentRowSpr = currentSpeed * (double)sampleRate * TickSecondsScale / currentTempo;
-            long start = (long)Math.Round(rowStartCursor);
-            long end = (long)Math.Round(rowStartCursor + currentRowSpr);
-            rowSamples = end - start;
-            if (rowSamples < 1)
-                rowSamples = 1;
-            sampleWithinRow = 0;
+            sprPerTick = currentRowSpr / currentSpeed;
 
-            int rowBase = row * channelCount;
-            for (int channel = 0; channel < channelCount; channel++)
-                applier.Apply(pattern.Cells[rowBase + channel], channel, song);
+            engine.EnterRow(pattern, row, song);
 
             currentOrder = orderIndex;
             currentRow = row;
             rowApplied = true;
+            EnterTick(0);
         }
 
         void AdvanceRow() {

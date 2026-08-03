@@ -99,9 +99,9 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
             Pull(seq, 25000);
 
             Assert.That(Controls(synth), Is.EqualTo(new[] {
-                "SetChannelGain(0,1)", "SetChannelPatch(0)", "NoteOn(0,60,127)",
-                "NoteOff(0,60)", "NoteOn(0,64,127)"
-            }));
+                "SetChannelGain(0,1)", "SetChannelPatch(0)", "NoteOn(0,60,127)", "SetChannelPitchBend(0,0)",
+                "NoteOff(0,60)", "NoteOn(0,64,127)", "SetChannelPitchBend(0,0)"
+            }), "each fresh note re-syncs the synth's pitch bend to 0.");
             Assert.That(seq.IsPlaying, Is.False, "a non-looping song stops when the order list ends.");
             Assert.That(seq.OrderIndex, Is.EqualTo(0));
             Assert.That(seq.Row, Is.EqualTo(3), "the last applied row is the final row of the pattern.");
@@ -179,9 +179,9 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
             Pull(seq, 25000);
 
             Assert.That(Controls(synth), Is.EqualTo(new[] {
-                "SetChannelPatch(0)", "NoteOn(0,60,127)",
-                "SetChannelPatch(0)", "NoteOff(0,60)", "NoteOn(0,62,127)"
-            }));
+                "SetChannelPatch(0)", "NoteOn(0,60,127)", "SetChannelPitchBend(0,0)",
+                "SetChannelPatch(0)", "NoteOff(0,60)", "NoteOn(0,62,127)", "SetChannelPitchBend(0,0)"
+            }), "each fresh note re-syncs the synth's pitch bend to 0.");
         }
 
         [Test, Parallelizable]
