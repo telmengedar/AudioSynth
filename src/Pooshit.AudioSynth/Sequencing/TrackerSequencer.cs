@@ -36,6 +36,7 @@ namespace Pooshit.AudioSynth.Sequencing {
         bool playing;
         bool pendingJump;
         int pendingJumpTarget;
+        bool channelsSeeded;
 
         /// <summary>Creates a sequencer over a live song, driving <paramref name="synth"/> via <paramref name="soundBank"/>.</summary>
         /// <param name="song">the live composition the cursor walks</param>
@@ -52,6 +53,8 @@ namespace Pooshit.AudioSynth.Sequencing {
                 throw new ArgumentException("Song.DefaultBpm must be positive.", nameof(song));
             if (song.DefaultSpeed <= 0)
                 throw new ArgumentException("Song.DefaultSpeed must be positive.", nameof(song));
+            if (song.ChannelPan.Length != 0 && song.ChannelPan.Length != song.ChannelCount)
+                throw new ArgumentException($"Song.ChannelPan must be empty or have length equal to ChannelCount ({song.ChannelCount}).", nameof(song));
 
             channelCount = song.ChannelCount;
             sampleRate = synth.Format.SampleRate;
@@ -104,6 +107,7 @@ namespace Pooshit.AudioSynth.Sequencing {
             sampleWithinTick = 0;
             rowApplied = false;
             pendingJump = false;
+            channelsSeeded = false;
         }
 
         /// <inheritdoc/>
@@ -226,6 +230,12 @@ namespace Pooshit.AudioSynth.Sequencing {
         void ApplyRow(Pattern pattern) {
             currentRowSpr = currentSpeed * (double)sampleRate * TickSecondsScale / currentTempo;
             sprPerTick = currentRowSpr / currentSpeed;
+
+            if (!channelsSeeded) {
+                for (int channel = 0; channel < channelCount; channel++)
+                    synth.SetChannelPan(channel, TrackerPan.InitialSigned(song, channel));
+                channelsSeeded = true;
+            }
 
             engine.EnterRow(pattern, row, song);
 

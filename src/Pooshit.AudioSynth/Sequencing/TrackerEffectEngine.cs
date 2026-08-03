@@ -97,6 +97,10 @@ namespace Pooshit.AudioSynth.Sequencing {
                     UpdateVolumeLevel(cell, ref state);
                     ArmTonePortamento(cell, channel, param, ref state);
                     break;
+                case TrackerEffectCommand.SetPan:
+                    pitchSettled = ApplyFreshCell(cell, channel, ref state);
+                    synth.SetChannelPan(channel, TrackerPan.ToSignedPan(param));
+                    break;
                 default:
                     pitchSettled = ApplyFreshCell(cell, channel, ref state);
                     ArmAdditiveEffect(effect, param, channel, ref state);

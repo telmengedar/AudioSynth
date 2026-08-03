@@ -23,6 +23,12 @@ namespace Pooshit.AudioSynth.Formats.Tracker {
         /// <summary>Number of channels (grid columns); must be in 1..16 to lower onto the synth.</summary>
         public int ChannelCount { get; set; }
 
+        /// <summary>
+        /// Per-channel initial pan, 0..128 scale (0=left, 64=centre, 128=right); empty = the engine
+        /// computes the default layout. A provided array's length must equal <see cref="ChannelCount"/>.
+        /// </summary>
+        public byte[] ChannelPan { get; set; } = Array.Empty<byte>();
+
         /// <summary>Instrument table; a cell's 1-based instrument slot <c>n</c> selects <c>Instruments[n − 1]</c>.</summary>
         public Instrument[] Instruments { get; set; } = Array.Empty<Instrument>();
 
