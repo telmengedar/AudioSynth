@@ -32,11 +32,11 @@ namespace Pooshit.AudioSynth.Sequencing {
                 activeKey[channel] = -1;
         }
 
-        /// <summary>Resolves one cell for a channel, emitting the gain, patch and note verbs it implies.</summary>
+        /// <summary>Resolves one cell's instrument latch and volume, emitting the gain verb it implies.</summary>
         /// <param name="cell">the cell to interpret</param>
         /// <param name="channel">the channel the cell belongs to</param>
-        /// <param name="song">the song supplying the instrument table</param>
-        public void Apply(in Cell cell, int channel, Song song) {
+        /// <param name="song">the song supplying the instrument table; unused here, kept for signature symmetry with <see cref="ApplyNote"/>.</param>
+        public void ApplyControls(in Cell cell, int channel, Song song) {
             if (cell.Instrument != 0)
                 currentInstrument[channel] = cell.Instrument;
 
@@ -44,7 +44,13 @@ namespace Pooshit.AudioSynth.Sequencing {
                 int level = cell.Volume > FullVolume ? FullVolume : cell.Volume;
                 sink.SetGain(channel, level / (float)FullVolume);
             }
+        }
 
+        /// <summary>Resolves one cell's note sub-column, emitting the patch and note verbs it implies.</summary>
+        /// <param name="cell">the cell to interpret</param>
+        /// <param name="channel">the channel the cell belongs to</param>
+        /// <param name="song">the song supplying the instrument table</param>
+        public void ApplyNote(in Cell cell, int channel, Song song) {
             if (TrackerNotes.IsPlayable(cell.Note)) {
                 ApplyPatch(channel, song);
                 if (activeKey[channel] != -1)
@@ -58,11 +64,30 @@ namespace Pooshit.AudioSynth.Sequencing {
                     ReleaseActive(channel);
             }
             else if (cell.Note == TrackerNotes.Cut) {
-                if (activeKey[channel] != -1) {
-                    sink.Silence(channel);
-                    activeKey[channel] = -1;
-                }
+                Cut(channel);
             }
+        }
+
+        /// <summary>Resolves one cell for a channel: <see cref="ApplyControls"/> then <see cref="ApplyNote"/>.</summary>
+        /// <param name="cell">the cell to interpret</param>
+        /// <param name="channel">the channel the cell belongs to</param>
+        /// <param name="song">the song supplying the instrument table</param>
+        public void Apply(in Cell cell, int channel, Song song) {
+            ApplyControls(cell, channel, song);
+            ApplyNote(cell, channel, song);
+        }
+
+        /// <summary>The channel's currently sounding MIDI key, or -1 if none is sounding.</summary>
+        /// <param name="channel">the channel to query</param>
+        public int ActiveKey(int channel) => activeKey[channel];
+
+        /// <summary>Silences a channel and clears its active key, so a later retrigger cannot revive the cut note.</summary>
+        /// <param name="channel">the channel to cut</param>
+        public void Cut(int channel) {
+            if (activeKey[channel] == -1)
+                return;
+            sink.Silence(channel);
+            activeKey[channel] = -1;
         }
 
         /// <summary>Clears all per-channel state, e.g. after a transport seek.</summary>

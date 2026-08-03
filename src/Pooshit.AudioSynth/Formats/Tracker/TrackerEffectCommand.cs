@@ -16,6 +16,33 @@ namespace Pooshit.AudioSynth.Formats.Tracker {
         SetTempo = 2,
 
         /// <summary>Jump the cursor to an order-list position; parameter is the target index into <see cref="Song.Order"/>.</summary>
-        JumpToOrder = 3
+        JumpToOrder = 3,
+
+        /// <summary>Per-tick volume ramp; hi nibble = up/tick, lo nibble = down/tick (hi>0 selects up).</summary>
+        VolumeSlide = 4,
+
+        /// <summary>Per-tick upward pitch slide; parameter is the semitone step per tick (engine scale const).</summary>
+        PortamentoUp = 5,
+
+        /// <summary>Per-tick downward pitch slide; parameter is the semitone step per tick (engine scale const).</summary>
+        PortamentoDown = 6,
+
+        /// <summary>Slides toward the cell's note without retriggering it; parameter is the per-tick semitone step.</summary>
+        TonePortamento = 7,
+
+        /// <summary>Cycles the pitch through base/hi-nibble/lo-nibble semitone offsets every tick.</summary>
+        Arpeggio = 8,
+
+        /// <summary>Per-tick sinusoidal pitch modulation; hi nibble = rate, lo nibble = depth.</summary>
+        Vibrato = 9,
+
+        /// <summary>Re-triggers the sounding note every parameter ticks.</summary>
+        Retrigger = 10,
+
+        /// <summary>Silences the channel at the tick given by the parameter.</summary>
+        NoteCut = 11,
+
+        /// <summary>Withholds the whole cell's controls and note until the tick given by the parameter.</summary>
+        NoteDelay = 12
     }
 }
