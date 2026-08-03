@@ -430,11 +430,12 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
 
             seq.Play();
             Pull(seq, SamplesPerTick * 3 - 1);
-            Assert.That(Controls(synth), Is.Empty, "the whole cell is withheld until its delay tick.");
+            Assert.That(Controls(synth), Is.EqualTo(new[] { "SetChannelPan(0,0)" }),
+                "only the initial pan seed fires; the whole cell is withheld until its delay tick.");
 
             Pull(seq, 1);
             Assert.That(Controls(synth), Is.EqualTo(new[] {
-                Gain(50 / 64f), "SetChannelPatch(0)", "NoteOn(0,60,127)"
+                "SetChannelPan(0,0)", Gain(50 / 64f), "SetChannelPatch(0)", "NoteOn(0,60,127)"
             }), "at the delay tick the withheld controls and note both fire, in the applier's usual order.");
         }
 
@@ -452,7 +453,7 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
             Pull(seq, 1);
 
             Assert.That(Controls(synth), Is.EqualTo(new[] {
-                Gain(50 / 64f), "SetChannelPatch(0)", "NoteOn(0,60,127)", "SetChannelPitchBend(0,0)"
+                "SetChannelPan(0,0)", Gain(50 / 64f), "SetChannelPatch(0)", "NoteOn(0,60,127)", "SetChannelPitchBend(0,0)"
             }), "a delay param resolving to 0 has no valid tick 1..speed-1 to fire on, so it must apply the held cell " +
                 "immediately at tick 0 instead of silently dropping the note.");
         }

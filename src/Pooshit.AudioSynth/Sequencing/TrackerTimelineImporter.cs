@@ -31,6 +31,8 @@ namespace Pooshit.AudioSynth.Sequencing {
                 throw new ArgumentException("Song.DefaultBpm must be positive.", nameof(song));
             if (song.DefaultSpeed <= 0)
                 throw new ArgumentException("Song.DefaultSpeed must be positive.", nameof(song));
+            if (song.ChannelPan.Length != 0 && song.ChannelPan.Length != song.ChannelCount)
+                throw new ArgumentException($"Song.ChannelPan must be empty or have length equal to ChannelCount ({song.ChannelCount}).", nameof(song));
 
             int channelCount = song.ChannelCount;
             Timeline.Timeline timeline = new Timeline.Timeline();
@@ -38,7 +40,7 @@ namespace Pooshit.AudioSynth.Sequencing {
             TrackerCellApplier applier = new TrackerCellApplier(channelCount, sink);
             for (int channel = 0; channel < channelCount; channel++) {
                 timeline.Add(0, NeutralEvent.SetGain(channel, 1f));
-                timeline.Add(0, NeutralEvent.SetPan(channel, 0f));
+                timeline.Add(0, NeutralEvent.SetPan(channel, TrackerPan.InitialSigned(song, channel)));
             }
 
             int currentSpeed = song.DefaultSpeed;
@@ -64,8 +66,12 @@ namespace Pooshit.AudioSynth.Sequencing {
                     }
 
                     sink.Offset = (long)Math.Round(cursor);
-                    for (int channel = 0; channel < channelCount; channel++)
-                        applier.Apply(pattern.Cells[rowBase + channel], channel, song);
+                    for (int channel = 0; channel < channelCount; channel++) {
+                        Cell cell = pattern.Cells[rowBase + channel];
+                        applier.Apply(cell, channel, song);
+                        if (cell.Effect == TrackerEffectCommand.SetPan)
+                            timeline.Add(sink.Offset, NeutralEvent.SetPan(channel, TrackerPan.ToSignedPan(cell.EffectParam)));
+                    }
 
                     cursor += currentSpeed * (double)sampleRate * TickSecondsScale / currentTempo;
                 }

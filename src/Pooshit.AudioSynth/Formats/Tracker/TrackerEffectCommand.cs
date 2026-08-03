@@ -43,6 +43,9 @@ namespace Pooshit.AudioSynth.Formats.Tracker {
         NoteCut = 11,
 
         /// <summary>Withholds the whole cell's controls and note until the tick given by the parameter.</summary>
-        NoteDelay = 12
+        NoteDelay = 12,
+
+        /// <summary>Sets the channel's pan at row-enter; parameter is the pan on the 0..128 scale (see <see cref="TrackerPan"/>).</summary>
+        SetPan = 13
     }
 }
