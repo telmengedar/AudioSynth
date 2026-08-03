@@ -46,7 +46,7 @@ namespace Pooshit.AudioSynth.Tests.Tracker {
         [Test, Parallelizable]
         public void TrivialSong_ThroughRealtimeSequencer_RendersNonSilentBoundedAudio() {
             SoundBank bank = new SoundBank(new[] {
-                (0, 0, (IPatch)new SamplePatch(SustainedDcRegion(0.4f, 8192), MonoFormat.SampleRate))
+                (0, 0, "", (IPatch)new SamplePatch(SustainedDcRegion(0.4f, 8192), MonoFormat.SampleRate))
             });
 
             Timeline timeline = TrackerTimelineImporter.Import(TrivialSong(), MonoFormat.SampleRate);

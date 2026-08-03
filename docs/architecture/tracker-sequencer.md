@@ -217,11 +217,7 @@ Same public surface (`Import(Song, sampleRate) → Timeline`), same behaviour, s
 
 ## 11. Patch enumeration (task item 7) — its OWN PR, designed here
 
-The editor's instrument picker needs to list available patches. Today `SoundBank` holds `byBank: bank → (program → IPatch)` and a flat `Patches` list, but exposes no `(bank, program)`-keyed enumeration, and `IPatch` carries **no name** (`IPatch.cs` has only `StartVoice`). Design:
-
-- Add a read-only enumeration to `SoundBank` yielding `(int Bank, int Program)` pairs in bank/program order (trivially derived from the existing `byBank` map). Shape: a small POD (`PatchReference` struct or equivalent) + an `IEnumerable<PatchReference> EnumeratePatches()`.
-- **Name source (open):** `IPatch` has no name. Options: (i) enumerate `(bank, program)` only and let the editor label via the tracker `Instrument.Name` it already stores; (ii) capture preset names at load time (SF2 presets have names) and carry them into the bank. Recommend (i) for the first cut (zero new load-path coupling); revisit if the picker needs synth-side names.
-- **Ships as a separate PR** (`feature/soundbank-patch-enumeration`), per one-feature-one-PR. It is independent of the sequencer.
+Superseded by `docs/architecture/soundbank-patch-enumeration.md` (task #7508, design #7509), which resolves OQ-5 toward including real SF2 preset names alongside `(bank, program)`.
 
 ## 12. Pre-Design Checklist (#1136 §5)
 
